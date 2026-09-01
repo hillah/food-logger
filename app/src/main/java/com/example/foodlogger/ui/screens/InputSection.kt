@@ -23,18 +23,25 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DoNotDisturbOn
+import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -46,17 +53,25 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.foodlogger.ui.theme.EmeraldGreenPrimary
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @Composable
 fun InputSection(
+    targetDate: LocalDate,
+    selectedCategory: MealCategory,
     selectedBitmap: Bitmap?,
     inputText: String,
     onImageSelected: (Bitmap?) -> Unit,
     onInputTextChanged: (String) -> Unit,
     onAnalyzeClick: () -> Unit,
+    onSkipMealClick: () -> Unit,
+    onBackClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val dateFormatter = DateTimeFormatter.ofPattern("yyyy年M月d日(E)", Locale.JAPANESE)
 
     // Camera launcher (takes Bitmap directly)
     val takePhotoLauncher = rememberLauncherForActivityResult(
@@ -91,11 +106,43 @@ fun InputSection(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text(
-                text = "食事の入力",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            // Header with Back button and Target Date/Category
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onBackClick) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "ダッシュボードに戻る")
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Event, contentDescription = null, tint = EmeraldGreenPrimary, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = targetDate.format(dateFormatter),
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+
+                // Fixed Category Badge
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = EmeraldGreenPrimary.copy(alpha = 0.15f)
+                ) {
+                    Text(
+                        text = selectedCategory.label,
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = EmeraldGreenPrimary,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
+                }
+            }
+
+            HorizontalDivider()
 
             // Image Preview or Buttons
             if (selectedBitmap != null) {
@@ -164,7 +211,7 @@ fun InputSection(
                 maxLines = 4
             )
 
-            // Analyze Button
+            // Analyze Button (Auto Saves after analysis)
             Button(
                 onClick = onAnalyzeClick,
                 modifier = Modifier
@@ -177,8 +224,25 @@ fun InputSection(
                 Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(20.dp))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Gemini AI で栄養素を解析",
+                    text = "Gemini AI で解析して保存",
                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+                )
+            }
+
+            // Skip meal (fasting / no meal) button
+            OutlinedButton(
+                onClick = onSkipMealClick,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.DoNotDisturbOn, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "食事しなかった（欠食）として記録",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }

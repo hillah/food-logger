@@ -5,12 +5,15 @@ import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.MealType
 import androidx.health.connect.client.records.NutritionRecord
+import androidx.health.connect.client.request.ReadRecordsRequest
+import androidx.health.connect.client.time.TimeRangeFilter
 import androidx.health.connect.client.units.Energy
 import androidx.health.connect.client.units.Mass
 import com.example.foodlogger.data.model.NutritionAnalysisResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZonedDateTime
 
@@ -25,7 +28,8 @@ class HealthConnectManager(private val context: Context) {
     }
 
     val permissions = setOf(
-        HealthPermission.getWritePermission(NutritionRecord::class)
+        HealthPermission.getWritePermission(NutritionRecord::class),
+        HealthPermission.getReadPermission(NutritionRecord::class)
     )
 
     fun isHealthConnectAvailable(): Boolean {
@@ -38,27 +42,89 @@ class HealthConnectManager(private val context: Context) {
         return granted.containsAll(permissions)
     }
 
-    suspend fun insertNutritionRecord(
+    /**
+     * Read NutritionRecords within the specified time range.
+     */
+    suspend fun readNutritionRecords(
+        startTime: Instant,
+        endTime: Instant
+    ): Result<List<NutritionRecord>> = withContext(Dispatchers.IO) {
+        val client = healthConnectClient ?: return@withContext Result.failure(
+            IllegalStateException("Health Connect が利用できません。")
+        )
+        try {
+            val response = client.readRecords(
+                ReadRecordsRequest(
+                    recordType = NutritionRecord::class,
+                    timeRangeFilter = TimeRangeFilter.between(startTime, endTime)
+                )
+            )
+            Result.success(response.records)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Delete records by ID.
+     */
+    suspend fun deleteNutritionRecords(recordIds: List<String>): Result<Unit> = withContext(Dispatchers.IO) {
+        val client = healthConnectClient ?: return@withContext Result.failure(
+            IllegalStateException("Health Connect が利用できません。")
+        )
+        try {
+            client.deleteRecords(
+                recordType = NutritionRecord::class,
+                recordIdsList = recordIds,
+                clientRecordIdsList = emptyList()
+            )
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Save/Overwrite nutrition record for a specific date and meal type.
+     */
+    suspend fun upsertNutritionRecord(
         analysisResult: NutritionAnalysisResult,
-        recordedTime: Instant = Instant.now()
+        targetDate: LocalDate,
+        mealTypeString: String
     ): Result<String> = withContext(Dispatchers.IO) {
         val client = healthConnectClient ?: return@withContext Result.failure(
-            IllegalStateException("Health Connect がこの端末で利用できません。")
+            IllegalStateException("Health Connect が利用できません。")
         )
 
         try {
-            val zoneOffset = ZonedDateTime.ofInstant(recordedTime, ZoneId.systemDefault()).offset
-            val nutrients = analysisResult.nutrients
+            val zoneId = ZoneId.systemDefault()
+            val dayStart = targetDate.atStartOfDay(zoneId).toInstant()
+            val dayEnd = targetDate.plusDays(1).atStartOfDay(zoneId).toInstant().minusMillis(1)
 
-            val mealTypeConstant = when (analysisResult.mealType.uppercase()) {
-                "BREAKFAST" -> MealType.MEAL_TYPE_BREAKFAST
-                "LUNCH" -> MealType.MEAL_TYPE_LUNCH
-                "DINNER" -> MealType.MEAL_TYPE_DINNER
-                "SNACK" -> MealType.MEAL_TYPE_SNACK
-                else -> MealType.MEAL_TYPE_UNKNOWN
+            val mealTypeConstant = parseMealType(mealTypeString)
+
+            // 1. Check and delete existing records for the same day & mealType
+            val existing = client.readRecords(
+                ReadRecordsRequest(
+                    recordType = NutritionRecord::class,
+                    timeRangeFilter = TimeRangeFilter.between(dayStart, dayEnd)
+                )
+            ).records
+
+            val toDelete = existing.filter { it.mealType == mealTypeConstant }.map { it.metadata.id }
+            if (toDelete.isNotEmpty()) {
+                client.deleteRecords(
+                    recordType = NutritionRecord::class,
+                    recordIdsList = toDelete,
+                    clientRecordIdsList = emptyList()
+                )
             }
 
-            // Sodium calculation: if sodiumMg is 0 but saltEquivalentG is present, calculate Na
+            // 2. Determine recorded time based on meal type and targetDate
+            val recordedTime = getTargetTimeForMeal(targetDate, mealTypeConstant, zoneId)
+            val zoneOffset = ZonedDateTime.ofInstant(recordedTime, zoneId).offset
+            val nutrients = analysisResult.nutrients
+
             val effectiveSodiumMg = if (nutrients.sodiumMg > 0) {
                 nutrients.sodiumMg
             } else if (nutrients.saltEquivalentG > 0) {
@@ -106,5 +172,85 @@ class HealthConnectManager(private val context: Context) {
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    /**
+     * Record a skipped meal (0 kcal) for a specific date and meal type.
+     */
+    suspend fun insertSkippedMealRecord(
+        targetDate: LocalDate,
+        mealTypeString: String
+    ): Result<String> = withContext(Dispatchers.IO) {
+        val client = healthConnectClient ?: return@withContext Result.failure(
+            IllegalStateException("Health Connect が利用できません。")
+        )
+
+        try {
+            val zoneId = ZoneId.systemDefault()
+            val dayStart = targetDate.atStartOfDay(zoneId).toInstant()
+            val dayEnd = targetDate.plusDays(1).atStartOfDay(zoneId).toInstant().minusMillis(1)
+
+            val mealTypeConstant = parseMealType(mealTypeString)
+
+            // Delete existing records for the same day & mealType
+            val existing = client.readRecords(
+                ReadRecordsRequest(
+                    recordType = NutritionRecord::class,
+                    timeRangeFilter = TimeRangeFilter.between(dayStart, dayEnd)
+                )
+            ).records
+
+            val toDelete = existing.filter { it.mealType == mealTypeConstant }.map { it.metadata.id }
+            if (toDelete.isNotEmpty()) {
+                client.deleteRecords(
+                    recordType = NutritionRecord::class,
+                    recordIdsList = toDelete,
+                    clientRecordIdsList = emptyList()
+                )
+            }
+
+            val recordedTime = getTargetTimeForMeal(targetDate, mealTypeConstant, zoneId)
+            val zoneOffset = ZonedDateTime.ofInstant(recordedTime, zoneId).offset
+
+            val record = NutritionRecord(
+                startTime = recordedTime,
+                startZoneOffset = zoneOffset,
+                endTime = recordedTime.plusSeconds(60),
+                endZoneOffset = zoneOffset,
+                name = "食事なし",
+                mealType = mealTypeConstant,
+                energy = Energy.kilocalories(0.0),
+                protein = Mass.grams(0.0),
+                totalFat = Mass.grams(0.0),
+                totalCarbohydrate = Mass.grams(0.0)
+            )
+
+            val response = client.insertRecords(listOf(record))
+            val recordId = response.recordIdsList.firstOrNull() ?: "skipped_id"
+            Result.success(recordId)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private fun parseMealType(mealTypeString: String): Int {
+        return when (mealTypeString.uppercase()) {
+            "BREAKFAST" -> MealType.MEAL_TYPE_BREAKFAST
+            "LUNCH" -> MealType.MEAL_TYPE_LUNCH
+            "DINNER" -> MealType.MEAL_TYPE_DINNER
+            "SNACK" -> MealType.MEAL_TYPE_SNACK
+            else -> MealType.MEAL_TYPE_UNKNOWN
+        }
+    }
+
+    private fun getTargetTimeForMeal(date: LocalDate, mealType: Int, zoneId: ZoneId): Instant {
+        val time = when (mealType) {
+            MealType.MEAL_TYPE_BREAKFAST -> date.atTime(8, 0)
+            MealType.MEAL_TYPE_LUNCH -> date.atTime(12, 30)
+            MealType.MEAL_TYPE_DINNER -> date.atTime(19, 0)
+            MealType.MEAL_TYPE_SNACK -> date.atTime(15, 0)
+            else -> date.atTime(21, 0)
+        }
+        return time.atZone(zoneId).toInstant()
     }
 }

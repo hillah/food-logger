@@ -12,6 +12,8 @@
     <!-- Health Connect Permissions -->
     <uses-permission android:name="android.permission.health.WRITE_NUTRITION" />
     <uses-permission android:name="androidx.health.permission.Nutrition.WRITE" />
+    <uses-permission android:name="android.permission.health.READ_NUTRITION" />
+    <uses-permission android:name="androidx.health.permission.Nutrition.READ" />
 
     <!-- Queries for Health Connect app package (Android 11+) -->
     <queries>

@@ -20,7 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.RestaurantMenu
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -46,12 +46,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.PermissionController
 import com.example.foodlogger.ui.theme.EmeraldGreenPrimary
+import com.example.foodlogger.viewmodel.CurrentScreen
 import com.example.foodlogger.viewmodel.FoodLoggerViewModel
 import com.example.foodlogger.viewmodel.UiState
 
@@ -62,12 +62,26 @@ fun HomeScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val currentScreen by viewModel.currentScreen.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val selectedBitmap by viewModel.selectedImageBitmap.collectAsState()
     val inputText by viewModel.inputText.collectAsState()
     val hasPermission by viewModel.hasHealthConnectPermission.collectAsState()
     val geminiApiKey by viewModel.geminiApiKey.collectAsState()
     val geminiModel by viewModel.geminiModel.collectAsState()
+
+    val currentWeekStart by viewModel.currentWeekStart.collectAsState()
+    val weekRecordsMap by viewModel.weekRecordsMap.collectAsState()
+    val previousWeekUnregisteredList by viewModel.previousWeekUnregisteredList.collectAsState()
+    val selectedDate by viewModel.selectedDate.collectAsState()
+    val selectedMealCategory by viewModel.selectedMealCategory.collectAsState()
+
+    val userAgeGroup by viewModel.userAgeGroup.collectAsState()
+    val userGender by viewModel.userGender.collectAsState()
+    val userActivityLevel by viewModel.userActivityLevel.collectAsState()
+    val summaryTargetDate by viewModel.summaryTargetDate.collectAsState()
+    val summaryNutrients by viewModel.summaryNutrients.collectAsState()
+    val summaryHasCompletedMainMeals by viewModel.summaryHasCompletedMainMeals.collectAsState()
 
     var showSettingsDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -91,6 +105,11 @@ fun HomeScreen(
         }
     }
 
+    // Handle Android system back button/gesture
+    androidx.activity.compose.BackHandler(enabled = currentScreen != CurrentScreen.DASHBOARD) {
+        viewModel.backToDashboard()
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -98,7 +117,7 @@ fun HomeScreen(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            imageVector = Icons.Default.Favorite,
+                            imageVector = Icons.Default.RestaurantMenu,
                             contentDescription = null,
                             tint = EmeraldGreenPrimary,
                             modifier = Modifier.size(24.dp)
@@ -128,16 +147,14 @@ fun HomeScreen(
                 .padding(innerPadding)
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                modifier = Modifier.fillMaxSize()
             ) {
                 // Health Connect permission banner if not granted
                 if (!hasPermission) {
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
                         shape = RoundedCornerShape(12.dp)
                     ) {
@@ -159,7 +176,7 @@ fun HomeScreen(
                                 )
                             }
                             Text(
-                                text = "栄養素データを Health Connect に書き込むための権限を許可してください。",
+                                text = "栄養素データの読み書きを行うため、Health Connect権限を許可してください。",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onErrorContainer
                             )
@@ -179,7 +196,9 @@ fun HomeScreen(
                 // API Key Missing Warning Banner
                 if (geminiApiKey.isBlank()) {
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
                         shape = RoundedCornerShape(12.dp)
                     ) {
@@ -212,29 +231,73 @@ fun HomeScreen(
                     }
                 }
 
-                // Main Content depending on state
-                when (val state = uiState) {
-                    is UiState.Preview -> {
-                        NutritionPreviewCard(
-                            result = state.result,
-                            onResultChanged = { updated -> viewModel.updateAnalysisResult(updated) },
-                            onSaveToHealthConnect = { record -> viewModel.saveToHealthConnect(record) },
-                            onCancel = { viewModel.resetToIdle() }
+                // Main Content Switching based on currentScreen and uiState
+                when {
+                    uiState is UiState.Preview -> {
+                        val state = uiState as UiState.Preview
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState())
+                                .padding(16.dp)
+                        ) {
+                            NutritionPreviewCard(
+                                result = state.result,
+                                onResultChanged = { updated -> viewModel.updateAnalysisResult(updated) },
+                                onSaveToHealthConnect = { record -> viewModel.saveToHealthConnect(record) },
+                                onBackToDashboard = { viewModel.backToDashboard() }
+                            )
+                        }
+                    }
+                    currentScreen == CurrentScreen.INPUT -> {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState())
+                                .padding(16.dp)
+                        ) {
+                            InputSection(
+                                targetDate = selectedDate,
+                                selectedCategory = selectedMealCategory,
+                                selectedBitmap = selectedBitmap,
+                                inputText = inputText,
+                                onImageSelected = { bitmap -> viewModel.onImageSelected(bitmap) },
+                                onInputTextChanged = { text -> viewModel.onInputTextChanged(text) },
+                                onAnalyzeClick = { viewModel.analyzeMealAndAutoSave() },
+                                onSkipMealClick = { viewModel.recordSkippedMeal() },
+                                onBackClick = { viewModel.backToDashboard() }
+                            )
+                        }
+                    }
+                    currentScreen == CurrentScreen.DAILY_SUMMARY -> {
+                        DailySummaryScreen(
+                            targetDate = summaryTargetDate,
+                            dailyTotalNutrients = summaryNutrients,
+                            hasCompletedMainMeals = summaryHasCompletedMainMeals,
+                            ageGroup = userAgeGroup,
+                            gender = userGender,
+                            activityLevel = userActivityLevel,
+                            onBackClick = { viewModel.backToDashboard() }
                         )
                     }
                     else -> {
-                        // Input Section
-                        InputSection(
-                            selectedBitmap = selectedBitmap,
-                            inputText = inputText,
-                            onImageSelected = { bitmap -> viewModel.onImageSelected(bitmap) },
-                            onInputTextChanged = { text -> viewModel.onInputTextChanged(text) },
-                            onAnalyzeClick = { viewModel.analyzeMeal() }
+                        // DASHBOARD
+                        WeeklyDashboardScreen(
+                            currentWeekStart = currentWeekStart,
+                            weekRecordsMap = weekRecordsMap,
+                            previousWeekUnregisteredList = previousWeekUnregisteredList,
+                            ageGroup = userAgeGroup,
+                            gender = userGender,
+                            activityLevel = userActivityLevel,
+                            onPreviousWeekClick = { viewModel.goToPreviousWeek() },
+                            onNextWeekClick = { viewModel.goToNextWeek() },
+                            onCurrentWeekClick = { viewModel.goToCurrentWeek() },
+                            onCellClick = { date, category -> viewModel.openMealInput(date, category) },
+                            onDailySummaryClick = { date -> viewModel.openDailySummary(date) },
+                            onRefresh = { viewModel.loadWeekRecords() }
                         )
                     }
                 }
-
-                Spacer(modifier = Modifier.height(24.dp))
             }
 
             // Loading overlay
@@ -272,9 +335,11 @@ fun HomeScreen(
         SettingsDialog(
             currentApiKey = geminiApiKey,
             currentModel = geminiModel,
-            onSave = { apiKey, model ->
-                viewModel.saveApiKey(apiKey)
-                viewModel.saveModel(model)
+            currentAgeGroup = userAgeGroup,
+            currentGender = userGender,
+            currentActivityLevel = userActivityLevel,
+            onSave = { apiKey, model, ageGroup, gender, activityLevel ->
+                viewModel.saveSettings(apiKey, model, ageGroup, gender, activityLevel)
                 Toast.makeText(context, "設定を保存しました", Toast.LENGTH_SHORT).show()
             },
             onDismiss = { showSettingsDialog = false }

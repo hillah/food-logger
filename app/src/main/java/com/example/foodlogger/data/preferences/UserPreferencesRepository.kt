@@ -15,7 +15,14 @@ class UserPreferencesRepository(private val context: Context) {
     companion object {
         private val KEY_GEMINI_API_KEY = stringPreferencesKey("gemini_api_key")
         private val KEY_GEMINI_MODEL = stringPreferencesKey("gemini_model")
+        private val KEY_USER_AGE_GROUP = stringPreferencesKey("user_age_group")
+        private val KEY_USER_GENDER = stringPreferencesKey("user_gender")
+        private val KEY_USER_ACTIVITY_LEVEL = stringPreferencesKey("user_activity_level")
+
         const val DEFAULT_MODEL = "gemini-flash-lite-latest"
+        const val DEFAULT_AGE_GROUP = "40s"
+        const val DEFAULT_GENDER = "male"
+        const val DEFAULT_ACTIVITY_LEVEL = "low"
     }
 
     val geminiApiKey: Flow<String> = context.dataStore.data.map { preferences ->
@@ -24,6 +31,18 @@ class UserPreferencesRepository(private val context: Context) {
 
     val geminiModel: Flow<String> = context.dataStore.data.map { preferences ->
         preferences[KEY_GEMINI_MODEL] ?: DEFAULT_MODEL
+    }
+
+    val userAgeGroup: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[KEY_USER_AGE_GROUP] ?: DEFAULT_AGE_GROUP
+    }
+
+    val userGender: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[KEY_USER_GENDER] ?: DEFAULT_GENDER
+    }
+
+    val userActivityLevel: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[KEY_USER_ACTIVITY_LEVEL] ?: DEFAULT_ACTIVITY_LEVEL
     }
 
     suspend fun saveGeminiApiKey(apiKey: String) {
@@ -35,6 +54,14 @@ class UserPreferencesRepository(private val context: Context) {
     suspend fun saveGeminiModel(model: String) {
         context.dataStore.edit { preferences ->
             preferences[KEY_GEMINI_MODEL] = model
+        }
+    }
+
+    suspend fun saveUserProfile(ageGroup: String, gender: String, activityLevel: String) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_USER_AGE_GROUP] = ageGroup
+            preferences[KEY_USER_GENDER] = gender
+            preferences[KEY_USER_ACTIVITY_LEVEL] = activityLevel
         }
     }
 }

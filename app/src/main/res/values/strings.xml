@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Food Logger</string>
+    <string name="health_connect_rationale">Food Logger requires write permission to Health Connect to save your analyzed nutritional intake data directly to your device health records.</string>
+</resources>

@@ -120,9 +120,12 @@ class HealthConnectManager(private val context: Context) {
                 )
             }
 
-            // 2. Determine recorded time based on meal type and targetDate
+            // 2. Determine recorded time based on meal type and targetDate (ensure not in future)
             val recordedTime = getTargetTimeForMeal(targetDate, mealTypeConstant, zoneId)
-            val zoneOffset = ZonedDateTime.ofInstant(recordedTime, zoneId).offset
+            val now = Instant.now()
+            val safeStartTime = if (recordedTime.isAfter(now)) now.minusSeconds(60) else recordedTime
+            val safeEndTime = if (safeStartTime.plusSeconds(60).isAfter(now)) now else safeStartTime.plusSeconds(60)
+            val zoneOffset = ZonedDateTime.ofInstant(safeStartTime, zoneId).offset
             val nutrients = analysisResult.nutrients
 
             val effectiveSodiumMg = if (nutrients.sodiumMg > 0) {
@@ -134,9 +137,9 @@ class HealthConnectManager(private val context: Context) {
             }
 
             val record = NutritionRecord(
-                startTime = recordedTime,
+                startTime = safeStartTime,
                 startZoneOffset = zoneOffset,
-                endTime = recordedTime.plusSeconds(60),
+                endTime = safeEndTime,
                 endZoneOffset = zoneOffset,
                 name = analysisResult.mealName.ifBlank { "食事記録" },
                 mealType = mealTypeConstant,
@@ -210,12 +213,15 @@ class HealthConnectManager(private val context: Context) {
             }
 
             val recordedTime = getTargetTimeForMeal(targetDate, mealTypeConstant, zoneId)
-            val zoneOffset = ZonedDateTime.ofInstant(recordedTime, zoneId).offset
+            val now = Instant.now()
+            val safeStartTime = if (recordedTime.isAfter(now)) now.minusSeconds(60) else recordedTime
+            val safeEndTime = if (safeStartTime.plusSeconds(60).isAfter(now)) now else safeStartTime.plusSeconds(60)
+            val zoneOffset = ZonedDateTime.ofInstant(safeStartTime, zoneId).offset
 
             val record = NutritionRecord(
-                startTime = recordedTime,
+                startTime = safeStartTime,
                 startZoneOffset = zoneOffset,
-                endTime = recordedTime.plusSeconds(60),
+                endTime = safeEndTime,
                 endZoneOffset = zoneOffset,
                 name = "食事なし",
                 mealType = mealTypeConstant,

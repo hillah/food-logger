@@ -82,6 +82,7 @@ fun HomeScreen(
     val summaryTargetDate by viewModel.summaryTargetDate.collectAsState()
     val summaryNutrients by viewModel.summaryNutrients.collectAsState()
     val summaryHasCompletedMainMeals by viewModel.summaryHasCompletedMainMeals.collectAsState()
+    val summaryDayRecords by viewModel.summaryDayRecords.collectAsState()
 
     var showSettingsDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -274,6 +275,7 @@ fun HomeScreen(
                             targetDate = summaryTargetDate,
                             dailyTotalNutrients = summaryNutrients,
                             hasCompletedMainMeals = summaryHasCompletedMainMeals,
+                            dayRecords = summaryDayRecords,
                             ageGroup = userAgeGroup,
                             gender = userGender,
                             activityLevel = userActivityLevel,

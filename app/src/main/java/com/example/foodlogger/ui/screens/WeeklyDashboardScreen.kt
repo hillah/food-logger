@@ -41,6 +41,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,8 +53,10 @@ import androidx.compose.ui.unit.sp
 import androidx.health.connect.client.records.MealType
 import androidx.health.connect.client.records.NutritionRecord
 import com.example.foodlogger.ui.theme.EmeraldGreenPrimary
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.time.temporal.TemporalAdjusters
 import java.util.Locale
 
 enum class MealCategory(val key: String, val label: String, val mealTypeConstant: Int) {
@@ -88,12 +91,27 @@ fun WeeklyDashboardScreen(
 ) {
     val today = LocalDate.now()
     val earliestAllowedDate = today.minusDays(30) // Health Connect 30-day limit
+    val currentWeekOfToday = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY))
+    val isViewingCurrentWeek = currentWeekStart == currentWeekOfToday
+
     val canGoPreviousWeek = currentWeekStart.minusWeeks(1).plusDays(6) >= earliestAllowedDate
+    val canGoNextWeek = currentWeekStart < currentWeekOfToday
 
     val weekDays = (0..6).map { currentWeekStart.plusDays(it.toLong()) }
     val formatterHeader = DateTimeFormatter.ofPattern("M/d(E)", Locale.JAPANESE)
     val weekRangeText = "${currentWeekStart.format(DateTimeFormatter.ofPattern("M/d(E)", Locale.JAPANESE))} 〜 ${weekDays.last().format(DateTimeFormatter.ofPattern("M/d(E)", Locale.JAPANESE))}"
     val targetStandards = com.example.foodlogger.data.model.NutritionStandards.getDailyTarget(ageGroup, gender, activityLevel)
+
+    // Scroll state for horizontal matrix
+    val matrixScrollState = rememberScrollState()
+
+    // Auto-scroll to end on Thursday, Friday, Saturday if viewing current week
+    val isLaterHalfOfWeek = today.dayOfWeek in listOf(DayOfWeek.THURSDAY, DayOfWeek.FRIDAY, DayOfWeek.SATURDAY)
+    LaunchedEffect(currentWeekStart) {
+        if (isViewingCurrentWeek && isLaterHalfOfWeek) {
+            matrixScrollState.scrollTo(matrixScrollState.maxValue)
+        }
+    }
 
     Column(
         modifier = modifier
@@ -140,10 +158,17 @@ fun WeeklyDashboardScreen(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onNextWeekClick) {
-                        Icon(Icons.Default.ChevronRight, contentDescription = "来週へ")
+                    IconButton(
+                        onClick = onNextWeekClick,
+                        enabled = canGoNextWeek
+                    ) {
+                        Icon(
+                            Icons.Default.ChevronRight,
+                            contentDescription = "来週へ",
+                            tint = if (canGoNextWeek) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                        )
                     }
-                    if (currentWeekStart != today.minusDays(today.dayOfWeek.value % 7L)) {
+                    if (!isViewingCurrentWeek) {
                         FilledTonalButton(
                             onClick = onCurrentWeekClick,
                             shape = RoundedCornerShape(8.dp),
@@ -159,37 +184,89 @@ fun WeeklyDashboardScreen(
             }
         }
 
-        // Weekly Matrix Card (Horizontally Scrollable)
+        // Weekly Matrix Card (Fixed Left Labels + Horizontally Scrollable Days)
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
-            Column(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(12.dp)
             ) {
-                // Scrollable Matrix Grid
+                // 1. Fixed Left Column (Category Labels)
+                Column(
+                    modifier = Modifier.width(56.dp)
+                ) {
+                    // Empty Top-Left Cell for Header
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(38.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // Empty corner
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Category Labels
+                    MealCategory.values().forEach { category ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 3.dp)
+                                .height(58.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = category.label,
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+
+                    // Summary Label
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .height(58.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(EmeraldGreenPrimary.copy(alpha = 0.18f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "総括",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = EmeraldGreenPrimary
+                            )
+                            Text(
+                                text = "日次評価",
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
+                                color = EmeraldGreenPrimary
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                // 2. Horizontally Scrollable 7 Days Data Grid
                 Row(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
+                        .weight(1f)
+                        .horizontalScroll(matrixScrollState)
                 ) {
                     Column {
-                        // Header Row: Category Column + 7 Days
+                        // Header Row: 7 Days
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            // Empty Top-Left Cell
-                            Box(
-                                modifier = Modifier
-                                    .width(60.dp)
-                                    .height(38.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                // Empty corner
-                            }
-
-                            // Day Column Headers
                             weekDays.forEach { date ->
                                 val isToday = date == today
                                 Box(
@@ -223,23 +300,6 @@ fun WeeklyDashboardScreen(
                                 modifier = Modifier.padding(vertical = 3.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // Category Label Header
-                                Box(
-                                    modifier = Modifier
-                                        .width(60.dp)
-                                        .height(58.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = category.label,
-                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                }
-
-                                // 7 Day Cells for this Category
                                 weekDays.forEach { date ->
                                     val dayRecords = weekRecordsMap[date] ?: emptyMap()
                                     val record = dayRecords[category.mealTypeConstant]
@@ -274,30 +334,6 @@ fun WeeklyDashboardScreen(
                                 .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Summary Header Cell
-                            Box(
-                                modifier = Modifier
-                                    .width(60.dp)
-                                    .height(58.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(EmeraldGreenPrimary.copy(alpha = 0.18f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(
-                                        text = "総括",
-                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                        color = EmeraldGreenPrimary
-                                    )
-                                    Text(
-                                        text = "日次評価",
-                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
-                                        color = EmeraldGreenPrimary
-                                    )
-                                }
-                            }
-
-                            // 7 Day Summary Cells
                             weekDays.forEach { date ->
                                 val dayRecords = weekRecordsMap[date] ?: emptyMap()
                                 val totalCalories = dayRecords.values.sumOf { it.energy?.inKilocalories ?: 0.0 }
@@ -342,7 +378,6 @@ fun WeeklyDashboardScreen(
         }
 
         // Previous Week Unregistered Alert (Shown only when viewing Current Week)
-        val isViewingCurrentWeek = currentWeekStart == today.minusDays(today.dayOfWeek.value % 7L)
         if (isViewingCurrentWeek) {
             Card(
                 modifier = Modifier.fillMaxWidth(),

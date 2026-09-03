@@ -1,12 +1,16 @@
 package com.example.foodlogger.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -82,18 +86,37 @@ fun InputSection(
         }
     }
 
+    // Permission launcher for camera
+    val requestCameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
+            try {
+                takePhotoLauncher.launch(null)
+            } catch (e: Exception) {
+                Toast.makeText(context, "カメラの起動に失敗しました: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            Toast.makeText(context, "カメラを使用するにはカメラ権限が必要です", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     // Gallery launcher
     val pickImageLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri))
-            } else {
-                @Suppress("DEPRECATION")
-                MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
+            try {
+                val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri))
+                } else {
+                    @Suppress("DEPRECATION")
+                    MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
+                }
+                onImageSelected(bitmap)
+            } catch (e: Exception) {
+                Toast.makeText(context, "画像の読み込みに失敗しました: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
             }
-            onImageSelected(bitmap)
         }
     }
 
@@ -178,7 +201,22 @@ fun InputSection(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     FilledTonalButton(
-                        onClick = { takePhotoLauncher.launch(null) },
+                        onClick = {
+                            val hasCameraPermission = ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.CAMERA
+                            ) == PackageManager.PERMISSION_GRANTED
+
+                            if (hasCameraPermission) {
+                                try {
+                                    takePhotoLauncher.launch(null)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "カメラの起動に失敗しました: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                requestCameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                            }
+                        },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp)
                     ) {

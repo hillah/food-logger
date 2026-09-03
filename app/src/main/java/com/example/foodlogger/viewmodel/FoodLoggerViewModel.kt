@@ -89,6 +89,9 @@ class FoodLoggerViewModel(
     private val _summaryHasCompletedMainMeals = MutableStateFlow(false)
     val summaryHasCompletedMainMeals: StateFlow<Boolean> = _summaryHasCompletedMainMeals.asStateFlow()
 
+    private val _summaryDayRecords = MutableStateFlow<Map<Int, NutritionRecord>>(emptyMap())
+    val summaryDayRecords: StateFlow<Map<Int, NutritionRecord>> = _summaryDayRecords.asStateFlow()
+
     // Selected Target for Registration
     private val _selectedDate = MutableStateFlow(LocalDate.now())
     val selectedDate: StateFlow<LocalDate> = _selectedDate.asStateFlow()
@@ -126,8 +129,11 @@ class FoodLoggerViewModel(
     }
 
     fun goToNextWeek() {
-        _currentWeekStart.value = _currentWeekStart.value.plusWeeks(1)
-        loadWeekRecords()
+        val currentWeekOfToday = getSundayOfCurrentWeek(LocalDate.now())
+        if (_currentWeekStart.value < currentWeekOfToday) {
+            _currentWeekStart.value = _currentWeekStart.value.plusWeeks(1)
+            loadWeekRecords()
+        }
     }
 
     fun goToCurrentWeek() {
@@ -147,22 +153,33 @@ class FoodLoggerViewModel(
     fun openDailySummary(date: LocalDate) {
         _summaryTargetDate.value = date
         val dayRecords = _weekRecordsMap.value[date] ?: emptyMap()
+        _summaryDayRecords.value = dayRecords
 
         var totalCalories = 0.0
         var totalProtein = 0.0
         var totalFat = 0.0
         var totalCarbs = 0.0
         var totalFiber = 0.0
+        var totalSugar = 0.0
+        var totalSodium = 0.0
         var totalSalt = 0.0
+        var totalPotassium = 0.0
         var totalCalcium = 0.0
         var totalIron = 0.0
         var totalZinc = 0.0
         var totalMagnesium = 0.0
         var totalVitA = 0.0
+        var totalVitB1 = 0.0
+        var totalVitB2 = 0.0
+        var totalVitB6 = 0.0
+        var totalVitB12 = 0.0
         var totalVitC = 0.0
         var totalVitD = 0.0
         var totalVitE = 0.0
         var totalFolate = 0.0
+        var totalSaturatedFat = 0.0
+        var totalTransFat = 0.0
+        var totalCholesterol = 0.0
 
         dayRecords.values.forEach { record ->
             totalCalories += record.energy?.inKilocalories ?: 0.0
@@ -170,17 +187,28 @@ class FoodLoggerViewModel(
             totalFat += record.totalFat?.inGrams ?: 0.0
             totalCarbs += record.totalCarbohydrate?.inGrams ?: 0.0
             totalFiber += record.dietaryFiber?.inGrams ?: 0.0
+            totalSugar += record.sugar?.inGrams ?: 0.0
+            totalPotassium += record.potassium?.inGrams?.times(1000.0) ?: 0.0
             totalCalcium += record.calcium?.inGrams?.times(1000.0) ?: 0.0
             totalIron += record.iron?.inGrams?.times(1000.0) ?: 0.0
             totalZinc += record.zinc?.inGrams?.times(1000.0) ?: 0.0
             totalMagnesium += record.magnesium?.inGrams?.times(1000.0) ?: 0.0
             totalVitA += record.vitaminA?.inGrams?.times(1_000_000.0) ?: 0.0
+            totalVitB1 += record.thiamin?.inGrams?.times(1000.0) ?: 0.0
+            totalVitB2 += record.riboflavin?.inGrams?.times(1000.0) ?: 0.0
+            totalVitB6 += record.vitaminB6?.inGrams?.times(1000.0) ?: 0.0
+            totalVitB12 += record.vitaminB12?.inGrams?.times(1_000_000.0) ?: 0.0
             totalVitC += record.vitaminC?.inGrams?.times(1000.0) ?: 0.0
             totalVitD += record.vitaminD?.inGrams?.times(1_000_000.0) ?: 0.0
             totalVitE += record.vitaminE?.inGrams?.times(1000.0) ?: 0.0
             totalFolate += record.folate?.inGrams?.times(1_000_000.0) ?: 0.0
-            // Salt equivalent from sodium
+            totalSaturatedFat += record.saturatedFat?.inGrams ?: 0.0
+            totalTransFat += record.transFat?.inGrams ?: 0.0
+            totalCholesterol += record.cholesterol?.inGrams?.times(1000.0) ?: 0.0
+
+            // Sodium & Salt equivalent
             val sodiumMg = record.sodium?.inGrams?.times(1000.0) ?: 0.0
+            totalSodium += sodiumMg
             totalSalt += (sodiumMg * 2.54) / 1000.0
         }
 
@@ -190,16 +218,26 @@ class FoodLoggerViewModel(
             fatG = totalFat,
             carbohydrateG = totalCarbs,
             fiberG = totalFiber,
+            sugarG = totalSugar,
+            sodiumMg = totalSodium,
             saltEquivalentG = totalSalt,
+            potassiumMg = totalPotassium,
             calciumMg = totalCalcium,
             ironMg = totalIron,
             zincMg = totalZinc,
             magnesiumMg = totalMagnesium,
             vitaminAMcg = totalVitA,
+            vitaminB1Mg = totalVitB1,
+            vitaminB2Mg = totalVitB2,
+            vitaminB6Mg = totalVitB6,
+            vitaminB12Mcg = totalVitB12,
             vitaminCMg = totalVitC,
             vitaminDMcg = totalVitD,
             vitaminEMg = totalVitE,
-            folateMcg = totalFolate
+            folateMcg = totalFolate,
+            saturatedFatG = totalSaturatedFat,
+            transFatG = totalTransFat,
+            cholesterolMg = totalCholesterol
         )
 
         val hasBreakfast = dayRecords.containsKey(MealCategory.BREAKFAST.mealTypeConstant)

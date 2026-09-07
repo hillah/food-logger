@@ -11,6 +11,9 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,8 +29,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AddPhotoAlternate
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DoNotDisturbOn
@@ -65,9 +68,12 @@ import java.util.Locale
 fun InputSection(
     targetDate: LocalDate,
     selectedCategory: MealCategory,
-    selectedBitmap: Bitmap?,
+    selectedBitmaps: List<Bitmap>,
     inputText: String,
-    onImageSelected: (Bitmap?) -> Unit,
+    onImagesAdded: (List<Bitmap>) -> Unit,
+    onImageAdded: (Bitmap) -> Unit,
+    onImageRemovedAt: (Int) -> Unit,
+    onClearImages: () -> Unit,
     onInputTextChanged: (String) -> Unit,
     onAnalyzeClick: () -> Unit,
     onSkipMealClick: () -> Unit,
@@ -82,7 +88,7 @@ fun InputSection(
         contract = ActivityResultContracts.TakePicturePreview()
     ) { bitmap: Bitmap? ->
         if (bitmap != null) {
-            onImageSelected(bitmap)
+            onImageAdded(bitmap)
         }
     }
 
@@ -101,21 +107,27 @@ fun InputSection(
         }
     }
 
-    // Gallery launcher
-    val pickImageLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            try {
-                val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri))
-                } else {
-                    @Suppress("DEPRECATION")
-                    MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
+    // Multiple Images Gallery launcher
+    val pickImagesLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            val bitmaps = uris.mapNotNull { uri ->
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri))
+                    } else {
+                        @Suppress("DEPRECATION")
+                        MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
+                    }
+                } catch (e: Exception) {
+                    null
                 }
-                onImageSelected(bitmap)
-            } catch (e: Exception) {
-                Toast.makeText(context, "画像の読み込みに失敗しました: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+            }
+            if (bitmaps.isNotEmpty()) {
+                onImagesAdded(bitmaps)
+            } else {
+                Toast.makeText(context, "画像の読み込みに失敗しました", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -137,7 +149,7 @@ fun InputSection(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onBackClick) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "ダッシュボードに戻る")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "ダッシュボードに戻る")
                     }
                     Spacer(modifier = Modifier.width(4.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -167,32 +179,95 @@ fun InputSection(
 
             HorizontalDivider()
 
-            // Image Preview or Buttons
-            if (selectedBitmap != null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
-                ) {
-                    Image(
-                        bitmap = selectedBitmap.asImageBitmap(),
-                        contentDescription = "Selected meal photo",
-                        modifier = Modifier.fillMaxWidth().height(200.dp),
-                        contentScale = ContentScale.Crop
-                    )
-                    IconButton(
-                        onClick = { onImageSelected(null) },
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(8.dp)
+            // Image Previews or Upload Buttons
+            if (selectedBitmaps.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Remove photo",
-                            tint = MaterialTheme.colorScheme.onSurface
+                        Text(
+                            text = "選択した写真 (${selectedBitmaps.size}枚)",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
                         )
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            FilledTonalButton(
+                                onClick = {
+                                    val hasCameraPermission = ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.CAMERA
+                                    ) == PackageManager.PERMISSION_GRANTED
+
+                                    if (hasCameraPermission) {
+                                        try {
+                                            takePhotoLauncher.launch(null)
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "カメラの起動に失敗しました: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else {
+                                        requestCameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                                    }
+                                },
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("カメラ追加", style = MaterialTheme.typography.labelSmall)
+                            }
+                            FilledTonalButton(
+                                onClick = { pickImagesLauncher.launch("image/*") },
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("写真追加", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+
+                    // Horizontal Scrollable Thumbnail List
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        selectedBitmaps.forEachIndexed { index, bitmap ->
+                            Box(
+                                modifier = Modifier
+                                    .size(if (selectedBitmaps.size == 1) 180.dp else 130.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
+                            ) {
+                                Image(
+                                    bitmap = bitmap.asImageBitmap(),
+                                    contentDescription = "Meal photo ${index + 1}",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                                // Delete button for this image
+                                Surface(
+                                    shape = RoundedCornerShape(topStart = 0.dp, topEnd = 12.dp, bottomStart = 8.dp, bottomEnd = 0.dp),
+                                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .clickable { onImageRemovedAt(index) }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Remove photo",
+                                        tint = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier
+                                            .padding(6.dp)
+                                            .size(16.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             } else {
@@ -226,7 +301,7 @@ fun InputSection(
                     }
 
                     FilledTonalButton(
-                        onClick = { pickImageLauncher.launch("image/*") },
+                        onClick = { pickImagesLauncher.launch("image/*") },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp)
                     ) {
@@ -257,7 +332,7 @@ fun InputSection(
                     .height(48.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = EmeraldGreenPrimary),
-                enabled = selectedBitmap != null || inputText.isNotBlank()
+                enabled = selectedBitmaps.isNotEmpty() || inputText.isNotBlank()
             ) {
                 Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(20.dp))
                 Spacer(modifier = Modifier.width(8.dp))

@@ -100,8 +100,8 @@ class FoodLoggerViewModel(
     val selectedMealCategory: StateFlow<MealCategory> = _selectedMealCategory.asStateFlow()
 
     // Input state
-    private val _selectedImageBitmap = MutableStateFlow<Bitmap?>(null)
-    val selectedImageBitmap: StateFlow<Bitmap?> = _selectedImageBitmap.asStateFlow()
+    private val _selectedImageBitmaps = MutableStateFlow<List<Bitmap>>(emptyList())
+    val selectedImageBitmaps: StateFlow<List<Bitmap>> = _selectedImageBitmaps.asStateFlow()
 
     private val _inputText = MutableStateFlow("")
     val inputText: StateFlow<String> = _inputText.asStateFlow()
@@ -144,7 +144,7 @@ class FoodLoggerViewModel(
     fun openMealInput(date: LocalDate, category: MealCategory) {
         _selectedDate.value = date
         _selectedMealCategory.value = category
-        _selectedImageBitmap.value = null
+        _selectedImageBitmaps.value = emptyList()
         _inputText.value = ""
         _uiState.value = UiState.Idle
         _currentScreen.value = CurrentScreen.INPUT
@@ -258,14 +258,30 @@ class FoodLoggerViewModel(
 
     fun backToDashboard() {
         _currentScreen.value = CurrentScreen.DASHBOARD
-        _selectedImageBitmap.value = null
+        _selectedImageBitmaps.value = emptyList()
         _inputText.value = ""
         _uiState.value = UiState.Idle
         loadWeekRecords()
     }
 
-    fun onImageSelected(bitmap: Bitmap?) {
-        _selectedImageBitmap.value = bitmap
+    fun onImageAdded(bitmap: Bitmap) {
+        _selectedImageBitmaps.value = _selectedImageBitmaps.value + bitmap
+    }
+
+    fun onImagesAdded(bitmaps: List<Bitmap>) {
+        _selectedImageBitmaps.value = _selectedImageBitmaps.value + bitmaps
+    }
+
+    fun onImageRemovedAt(index: Int) {
+        val current = _selectedImageBitmaps.value.toMutableList()
+        if (index in current.indices) {
+            current.removeAt(index)
+            _selectedImageBitmaps.value = current
+        }
+    }
+
+    fun clearImages() {
+        _selectedImageBitmaps.value = emptyList()
     }
 
     fun onInputTextChanged(text: String) {
@@ -370,7 +386,7 @@ class FoodLoggerViewModel(
     fun analyzeMealAndAutoSave() {
         val apiKey = geminiApiKey.value
         val model = geminiModel.value
-        val bitmap = _selectedImageBitmap.value
+        val bitmaps = _selectedImageBitmaps.value
         val prompt = _inputText.value
         val targetDate = _selectedDate.value
         val category = _selectedMealCategory.value
@@ -380,7 +396,7 @@ class FoodLoggerViewModel(
             return
         }
 
-        if (bitmap == null && prompt.isBlank()) {
+        if (bitmaps.isEmpty() && prompt.isBlank()) {
             _uiState.value = UiState.Error("写真を選択するか、食事内容のテキストを入力してください。")
             return
         }
@@ -391,7 +407,7 @@ class FoodLoggerViewModel(
                 apiKey = apiKey,
                 modelName = model,
                 promptText = prompt,
-                bitmap = bitmap
+                bitmaps = bitmaps
             )
 
             result.onSuccess { analysisResult ->

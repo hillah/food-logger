@@ -64,7 +64,7 @@ fun HomeScreen(
     val context = LocalContext.current
     val currentScreen by viewModel.currentScreen.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
-    val selectedBitmap by viewModel.selectedImageBitmap.collectAsState()
+    val selectedBitmaps by viewModel.selectedImageBitmaps.collectAsState()
     val inputText by viewModel.inputText.collectAsState()
     val hasPermission by viewModel.hasHealthConnectPermission.collectAsState()
     val geminiApiKey by viewModel.geminiApiKey.collectAsState()
@@ -260,9 +260,12 @@ fun HomeScreen(
                             InputSection(
                                 targetDate = selectedDate,
                                 selectedCategory = selectedMealCategory,
-                                selectedBitmap = selectedBitmap,
+                                selectedBitmaps = selectedBitmaps,
                                 inputText = inputText,
-                                onImageSelected = { bitmap -> viewModel.onImageSelected(bitmap) },
+                                onImagesAdded = { bitmaps -> viewModel.onImagesAdded(bitmaps) },
+                                onImageAdded = { bitmap -> viewModel.onImageAdded(bitmap) },
+                                onImageRemovedAt = { index -> viewModel.onImageRemovedAt(index) },
+                                onClearImages = { viewModel.clearImages() },
                                 onInputTextChanged = { text -> viewModel.onInputTextChanged(text) },
                                 onAnalyzeClick = { viewModel.analyzeMealAndAutoSave() },
                                 onSkipMealClick = { viewModel.recordSkippedMeal() },

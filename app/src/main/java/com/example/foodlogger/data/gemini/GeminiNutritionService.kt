@@ -71,7 +71,7 @@ class GeminiNutritionService {
         apiKey: String,
         modelName: String,
         promptText: String,
-        bitmap: Bitmap?
+        bitmaps: List<Bitmap> = emptyList()
     ): Result<NutritionAnalysisResult> = withContext(Dispatchers.IO) {
         if (apiKey.isBlank()) {
             return@withContext Result.failure(IllegalStateException("Gemini APIキーが設定されていません。右上の設定アイコン（⚙️）からAPIキーを入力してください。"))
@@ -81,7 +81,7 @@ class GeminiNutritionService {
         val endpointUrl = "https://generativelanguage.googleapis.com/v1beta/models/$targetModel:generateContent?key=${apiKey.trim()}"
         android.util.Log.d("FoodLogger", "=== Starting Gemini API Request ===")
         android.util.Log.d("FoodLogger", "Target Model: $targetModel")
-        android.util.Log.d("FoodLogger", "Has Bitmap: ${bitmap != null}, Prompt text length: ${promptText.length}")
+        android.util.Log.d("FoodLogger", "Image count: ${bitmaps.size}, Prompt text length: ${promptText.length}")
 
         try {
             val inputPrompt = if (promptText.isNotBlank()) {
@@ -93,8 +93,8 @@ class GeminiNutritionService {
             // Construct JSON Payload for Gemini REST API
             val partsJsonArray = mutableListOf<String>()
             
-            // If bitmap is present, add inline_data (base64)
-            if (bitmap != null) {
+            // Add inline_data (base64) for all bitmaps
+            bitmaps.forEach { bitmap ->
                 val stream = java.io.ByteArrayOutputStream()
                 // Compress bitmap to JPEG with quality 85 to keep request size optimal
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 85, stream)

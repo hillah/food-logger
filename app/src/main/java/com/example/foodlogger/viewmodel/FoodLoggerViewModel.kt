@@ -106,6 +106,9 @@ class FoodLoggerViewModel(
     private val _inputText = MutableStateFlow("")
     val inputText: StateFlow<String> = _inputText.asStateFlow()
 
+    private val _isSearchGroundingEnabled = MutableStateFlow(false)
+    val isSearchGroundingEnabled: StateFlow<Boolean> = _isSearchGroundingEnabled.asStateFlow()
+
     private val _hasHealthConnectPermission = MutableStateFlow(false)
     val hasHealthConnectPermission: StateFlow<Boolean> = _hasHealthConnectPermission.asStateFlow()
 
@@ -146,6 +149,7 @@ class FoodLoggerViewModel(
         _selectedMealCategory.value = category
         _selectedImageBitmaps.value = emptyList()
         _inputText.value = ""
+        _isSearchGroundingEnabled.value = false
         _uiState.value = UiState.Idle
         _currentScreen.value = CurrentScreen.INPUT
     }
@@ -260,6 +264,7 @@ class FoodLoggerViewModel(
         _currentScreen.value = CurrentScreen.DASHBOARD
         _selectedImageBitmaps.value = emptyList()
         _inputText.value = ""
+        _isSearchGroundingEnabled.value = false
         _uiState.value = UiState.Idle
         loadWeekRecords()
     }
@@ -286,6 +291,10 @@ class FoodLoggerViewModel(
 
     fun onInputTextChanged(text: String) {
         _inputText.value = text
+    }
+
+    fun onSearchGroundingToggled(enabled: Boolean) {
+        _isSearchGroundingEnabled.value = enabled
     }
 
     fun saveSettings(apiKey: String, model: String, ageGroup: String, gender: String, activityLevel: String) {
@@ -388,6 +397,7 @@ class FoodLoggerViewModel(
         val model = geminiModel.value
         val bitmaps = _selectedImageBitmaps.value
         val prompt = _inputText.value
+        val useSearch = _isSearchGroundingEnabled.value
         val targetDate = _selectedDate.value
         val category = _selectedMealCategory.value
 
@@ -402,12 +412,13 @@ class FoodLoggerViewModel(
         }
 
         viewModelScope.launch {
-            _uiState.value = UiState.Analyzing("Gemini AI で栄養素を解析中...")
+            _uiState.value = UiState.Analyzing(if (useSearch) "Gemini AI でWeb検索・栄養素を解析中..." else "Gemini AI で栄養素を解析中...")
             val result = geminiService.analyzeMeal(
                 apiKey = apiKey,
                 modelName = model,
                 promptText = prompt,
-                bitmaps = bitmaps
+                bitmaps = bitmaps,
+                useSearchGrounding = useSearch
             )
 
             result.onSuccess { analysisResult ->

@@ -73,7 +73,8 @@ class GeminiNutritionService {
         apiKey: String,
         modelName: String,
         promptText: String,
-        bitmaps: List<Bitmap> = emptyList()
+        bitmaps: List<Bitmap> = emptyList(),
+        useSearchGrounding: Boolean = false
     ): Result<NutritionAnalysisResult> = withContext(Dispatchers.IO) {
         if (apiKey.isBlank()) {
             return@withContext Result.failure(IllegalStateException("Gemini APIキーが設定されていません。右上の設定アイコン（⚙️）からAPIキーを入力してください。"))
@@ -82,7 +83,7 @@ class GeminiNutritionService {
         val targetModel = modelName.trim().removePrefix("models/").ifBlank { "gemini-flash-lite-latest" }
         val endpointUrl = "https://generativelanguage.googleapis.com/v1beta/models/$targetModel:generateContent?key=${apiKey.trim()}"
         android.util.Log.d("FoodLogger", "=== Starting Gemini API Request ===")
-        android.util.Log.d("FoodLogger", "Target Model: $targetModel")
+        android.util.Log.d("FoodLogger", "Target Model: $targetModel, Search Grounding: $useSearchGrounding")
         android.util.Log.d("FoodLogger", "Image count: ${bitmaps.size}, Prompt text length: ${promptText.length}")
 
         try {
@@ -110,7 +111,7 @@ class GeminiNutritionService {
 
             val escapedSystemInstruction = escapeJsonString(systemInstruction)
 
-            val requestBodyJson = """
+            val standardRequest = """
             {
               "system_instruction": {
                 "parts": [
@@ -132,32 +133,55 @@ class GeminiNutritionService {
             }
             """.trimIndent()
 
-            val url = java.net.URL(endpointUrl)
-            val connection = (url.openConnection() as java.net.HttpURLConnection).apply {
-                requestMethod = "POST"
-                doOutput = true
-                doInput = true
-                connectTimeout = 30000
-                readTimeout = 60000
-                setRequestProperty("Content-Type", "application/json; charset=UTF-8")
-                setRequestProperty("Accept", "application/json")
-            }
+            var responseCode: Int
+            var responseBody: String
 
-            connection.outputStream.use { os ->
-                os.write(requestBodyJson.toByteArray(Charsets.UTF_8))
-                os.flush()
-            }
+            if (useSearchGrounding) {
+                // Request with Google Search Grounding enabled
+                val searchRequest = """
+                {
+                  "tools": [
+                    {"google_search": {}}
+                  ],
+                  "system_instruction": {
+                    "parts": [
+                      {"text": "$escapedSystemInstruction"}
+                    ]
+                  },
+                  "contents": [
+                    {
+                      "role": "user",
+                      "parts": [
+                        ${partsJsonArray.joinToString(",")}
+                      ]
+                    }
+                  ],
+                  "generationConfig": {
+                    "temperature": 0.2
+                  }
+                }
+                """.trimIndent()
 
-            val responseCode = connection.responseCode
-            val responseBody = if (responseCode in 200..299) {
-                connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                val searchResponse = sendHttpRequest(endpointUrl, searchRequest)
+                responseCode = searchResponse.first
+                responseBody = searchResponse.second
+                android.util.Log.d("FoodLogger", "Gemini HTTP Response Code (with Search Grounding): $responseCode")
+
+                // If 400 Bad Request occurs, fallback to standard JSON mode request
+                if (responseCode == 400) {
+                    android.util.Log.w("FoodLogger", "Google Search Grounding returned 400. Falling back to standard JSON mode request.")
+                    val fallbackResponse = sendHttpRequest(endpointUrl, standardRequest)
+                    responseCode = fallbackResponse.first
+                    responseBody = fallbackResponse.second
+                    android.util.Log.d("FoodLogger", "Gemini Fallback Response Code: $responseCode")
+                }
             } else {
-                val errorStream = connection.errorStream ?: connection.inputStream
-                errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: "HTTP $responseCode"
+                // Standard fast & lightweight request
+                val standardResponse = sendHttpRequest(endpointUrl, standardRequest)
+                responseCode = standardResponse.first
+                responseBody = standardResponse.second
+                android.util.Log.d("FoodLogger", "Gemini HTTP Response Code (Standard): $responseCode")
             }
-
-            android.util.Log.d("FoodLogger", "Gemini HTTP Response Code: $responseCode")
-            android.util.Log.d("FoodLogger", "Gemini Response Body: $responseBody")
 
             if (responseCode !in 200..299) {
                 val parsedErrorMessage = parseGoogleApiError(responseCode, responseBody, targetModel)
@@ -175,6 +199,33 @@ class GeminiNutritionService {
             val msg = e.localizedMessage ?: e.message ?: "通信に失敗しました"
             Result.failure(Exception("Gemini解析エラー: $msg", e))
         }
+    }
+
+    private fun sendHttpRequest(endpointUrl: String, jsonPayload: String): Pair<Int, String> {
+        val url = java.net.URL(endpointUrl)
+        val connection = (url.openConnection() as java.net.HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            doInput = true
+            connectTimeout = 30000
+            readTimeout = 60000
+            setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+            setRequestProperty("Accept", "application/json")
+        }
+
+        connection.outputStream.use { os ->
+            os.write(jsonPayload.toByteArray(Charsets.UTF_8))
+            os.flush()
+        }
+
+        val responseCode = connection.responseCode
+        val responseBody = if (responseCode in 200..299) {
+            connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+        } else {
+            val errorStream = connection.errorStream ?: connection.inputStream
+            errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: "HTTP $responseCode"
+        }
+        return Pair(responseCode, responseBody)
     }
 
     private fun escapeJsonString(input: String): String {

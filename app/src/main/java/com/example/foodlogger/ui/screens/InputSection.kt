@@ -64,12 +64,19 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+
 @Composable
 fun InputSection(
     targetDate: LocalDate,
     selectedCategory: MealCategory,
     selectedBitmaps: List<Bitmap>,
     inputText: String,
+    isSearchGroundingEnabled: Boolean,
+    onSearchGroundingToggled: (Boolean) -> Unit,
     onImagesAdded: (List<Bitmap>) -> Unit,
     onImageAdded: (Bitmap) -> Unit,
     onImageRemovedAt: (Int) -> Unit,
@@ -323,6 +330,58 @@ fun InputSection(
                 minLines = 2,
                 maxLines = 4
             )
+
+            // Google Search Grounding toggle
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                color = if (isSearchGroundingEnabled) EmeraldGreenPrimary.copy(alpha = 0.1f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                border = BorderStroke(
+                    1.dp,
+                    if (isSearchGroundingEnabled) EmeraldGreenPrimary.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Public,
+                            contentDescription = null,
+                            tint = if (isSearchGroundingEnabled) EmeraldGreenPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "Google検索で公式情報を調査",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "市販品・外食の公式成分表をWeb検索",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Switch(
+                        checked = isSearchGroundingEnabled,
+                        onCheckedChange = onSearchGroundingToggled,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = EmeraldGreenPrimary,
+                            checkedTrackColor = EmeraldGreenPrimary.copy(alpha = 0.3f)
+                        )
+                    )
+                }
+            }
 
             // Analyze Button (Auto Saves after analysis)
             Button(

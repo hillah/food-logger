@@ -190,13 +190,21 @@ class GeminiNutritionService {
 
             // Extract candidate text from response JSON
             val textContent = extractGeneratedTextFromApiResponse(responseBody)
-                ?: return@withContext Result.failure(IllegalStateException("APIからの応答に生成テキストが含まれていませんでした。\nレスポンス: $responseBody"))
+                ?: return@withContext Result.failure(IllegalStateException("APIからの応答に生成テキストが含まれていませんでした。\nレスポンス抜粋: ${responseBody.take(500)}"))
 
             val cleanJson = extractJson(textContent)
-            val result = jsonParser.decodeFromString<NutritionAnalysisResult>(cleanJson)
+            val result = try {
+                jsonParser.decodeFromString<NutritionAnalysisResult>(cleanJson)
+            } catch (e: Exception) {
+                android.util.Log.e("FoodLogger", "JSON Decode Failed. CleanJson: $cleanJson", e)
+                return@withContext Result.failure(
+                    Exception("栄養素データの解析(JSON)に失敗しました: ${e.localizedMessage}\n\n【AIの出力結果】\n${textContent.take(1000)}", e)
+                )
+            }
             Result.success(result)
         } catch (e: Exception) {
             val msg = e.localizedMessage ?: e.message ?: "通信に失敗しました"
+            android.util.Log.e("FoodLogger", "Gemini API Error", e)
             Result.failure(Exception("Gemini解析エラー: $msg", e))
         }
     }
@@ -240,25 +248,28 @@ class GeminiNutritionService {
 
     private fun extractGeneratedTextFromApiResponse(responseJson: String): String? {
         try {
-            // Fast regex extraction of candidate text from {"candidates": [{"content": {"parts": [{"text": "..."}]}}]}
-            val textRegex = Regex(""""text"\s*:\s*"((?:[^"\\]|\\.)*)"""")
-            val matches = textRegex.findAll(responseJson).toList()
-            if (matches.isNotEmpty()) {
-                // Usually the main output text is in the candidates
-                val rawText = matches.last().groupValues[1]
-                return unescapeJsonString(rawText)
+            val root = org.json.JSONObject(responseJson)
+            val candidates = root.optJSONArray("candidates") ?: return null
+            if (candidates.length() > 0) {
+                val firstCandidate = candidates.getJSONObject(0)
+                val content = firstCandidate.optJSONObject("content") ?: return null
+                val parts = content.optJSONArray("parts") ?: return null
+                val sb = StringBuilder()
+                for (i in 0 until parts.length()) {
+                    val part = parts.getJSONObject(i)
+                    if (part.has("text")) {
+                        sb.append(part.getString("text"))
+                    }
+                }
+                val text = sb.toString().trim()
+                if (text.isNotBlank()) {
+                    return text
+                }
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            android.util.Log.e("FoodLogger", "Failed to parse API response with JSONObject: ${e.message}")
+        }
         return null
-    }
-
-    private fun unescapeJsonString(input: String): String {
-        return input
-            .replace("\\n", "\n")
-            .replace("\\r", "\r")
-            .replace("\\t", "\t")
-            .replace("\\\"", "\"")
-            .replace("\\\\", "\\")
     }
 
     private fun parseGoogleApiError(code: Int, body: String, model: String): String {

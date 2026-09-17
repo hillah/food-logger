@@ -55,6 +55,14 @@ import com.example.foodlogger.viewmodel.CurrentScreen
 import com.example.foodlogger.viewmodel.FoodLoggerViewModel
 import com.example.foodlogger.viewmodel.UiState
 
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
@@ -62,6 +70,7 @@ fun HomeScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     val currentScreen by viewModel.currentScreen.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val selectedBitmaps by viewModel.selectedImageBitmaps.collectAsState()
@@ -86,6 +95,7 @@ fun HomeScreen(
     val summaryDayRecords by viewModel.summaryDayRecords.collectAsState()
 
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var activeErrorDialogMessage by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     // Health Connect Permission Launcher
@@ -101,7 +111,7 @@ fun HomeScreen(
                 snackbarHostState.showSnackbar(state.message)
             }
             is UiState.Error -> {
-                snackbarHostState.showSnackbar(state.errorMessage)
+                activeErrorDialogMessage = state.errorMessage
             }
             else -> {}
         }
@@ -351,6 +361,41 @@ fun HomeScreen(
                 Toast.makeText(context, "設定を保存しました", Toast.LENGTH_SHORT).show()
             },
             onDismiss = { showSettingsDialog = false }
+        )
+    }
+
+    if (activeErrorDialogMessage != null) {
+        AlertDialog(
+            onDismissRequest = { activeErrorDialogMessage = null },
+            icon = { Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text("解析エラー詳細") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 300.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = activeErrorDialogMessage ?: "",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = { activeErrorDialogMessage = null }) {
+                    Text("閉じる")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = {
+                    clipboardManager.setText(AnnotatedString(activeErrorDialogMessage ?: ""))
+                    Toast.makeText(context, "エラー内容をクリップボードにコピーしました", Toast.LENGTH_SHORT).show()
+                }) {
+                    Text("内容をコピー")
+                }
+            }
         )
     }
 }

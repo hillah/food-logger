@@ -58,7 +58,7 @@ fun DailySummaryScreen(
     targetDate: LocalDate,
     dailyTotalNutrients: NutrientDetails,
     hasCompletedMainMeals: Boolean,
-    dayRecords: Map<Int, NutritionRecord> = emptyMap(),
+    dayRecords: Map<Int, List<NutritionRecord>> = emptyMap(),
     ageGroup: String,
     gender: String,
     activityLevel: String,
@@ -208,10 +208,10 @@ fun DailySummaryScreen(
                 HorizontalDivider()
 
                 val categoriesWithRecords = MealCategory.values().map { category ->
-                    category to dayRecords[category.mealTypeConstant]
+                    category to (dayRecords[category.mealTypeConstant] ?: emptyList())
                 }
 
-                val hasAnyRecord = categoriesWithRecords.any { it.second != null }
+                val hasAnyRecord = categoriesWithRecords.any { it.second.isNotEmpty() }
 
                 if (!hasAnyRecord) {
                     Text(
@@ -222,8 +222,8 @@ fun DailySummaryScreen(
                     )
                 } else {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        categoriesWithRecords.forEach { (category, record) ->
-                            MealSummaryItemRow(category = category, record = record)
+                        categoriesWithRecords.forEach { (category, records) ->
+                            MealSummaryCategoryRow(category = category, records = records)
                         }
                     }
                 }
@@ -331,13 +331,122 @@ private fun getStatus(actual: Double, target: Double, lowRatio: Double, highRati
 }
 
 @Composable
-private fun MealSummaryItemRow(
+private fun MealSummaryCategoryRow(
     category: MealCategory,
-    record: NutritionRecord?
+    records: List<NutritionRecord>
 ) {
-    val isSkipped = record != null && (record.name == "食事なし" || (record.energy?.inKilocalories ?: 0.0) == 0.0)
-    val isRegistered = record != null && !isSkipped
+    if (records.isEmpty()) {
+        SingleMealItemView(
+            categoryLabel = category.label,
+            title = "未登録",
+            calorieText = "ー",
+            isSkipped = false,
+            isRegistered = false
+        )
+        return
+    }
 
+    if (records.size == 1) {
+        val record = records.first()
+        val isSkipped = record.name == "食事なし" || (record.energy?.inKilocalories ?: 0.0) == 0.0
+        SingleMealItemView(
+            categoryLabel = category.label,
+            title = if (isSkipped) "食事なし（欠食）" else (record.name?.ifBlank { "食事記録" } ?: "食事記録"),
+            calorieText = if (isSkipped) "0 kcal" else "${(record.energy?.inKilocalories ?: 0.0).toInt()} kcal",
+            isSkipped = isSkipped,
+            isRegistered = !isSkipped
+        )
+        return
+    }
+
+    // Multiple records in this category (e.g. multiple entries for OTHER or SNACK)
+    val totalCalories = records.sumOf { it.energy?.inKilocalories ?: 0.0 }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = EmeraldGreenPrimary.copy(alpha = 0.18f),
+                modifier = Modifier.width(52.dp)
+            ) {
+                Text(
+                    text = category.label,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp
+                    ),
+                    color = EmeraldGreenPrimary,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Text(
+                text = "${records.size}件の記録",
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+
+            Text(
+                text = "計 ${totalCalories.toInt()} kcal",
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                color = EmeraldGreenPrimary
+            )
+        }
+
+        // Sub-items
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 64.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            records.forEach { rec ->
+                val kcal = rec.energy?.inKilocalories ?: 0.0
+                val name = rec.name?.ifBlank { "食事記録" } ?: "食事記録"
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "・$name",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "${kcal.toInt()} kcal",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SingleMealItemView(
+    categoryLabel: String,
+    title: String,
+    calorieText: String,
+    isSkipped: Boolean,
+    isRegistered: Boolean
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -363,7 +472,7 @@ private fun MealSummaryItemRow(
             modifier = Modifier.width(52.dp)
         ) {
             Text(
-                text = category.label,
+                text = categoryLabel,
                 style = MaterialTheme.typography.labelSmall.copy(
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.sp
@@ -382,61 +491,52 @@ private fun MealSummaryItemRow(
 
         // Meal Name / Status
         Column(modifier = Modifier.weight(1f)) {
-            when {
-                isRegistered -> {
-                    Text(
-                        text = record?.name?.ifBlank { "食事記録" } ?: "食事記録",
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                        color = MaterialTheme.colorScheme.onSurface
+            if (isSkipped) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.DoNotDisturbOn,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(14.dp)
                     )
-                }
-                isSkipped -> {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.DoNotDisturbOn,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "食事なし（欠食）",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-                else -> {
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "未登録",
+                        text = title,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            } else {
+                Text(
+                    text = title,
+                    style = if (isRegistered) {
+                        MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
+                    } else {
+                        MaterialTheme.typography.bodySmall
+                    },
+                    color = if (isRegistered) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    }
+                )
             }
         }
 
         // Calories
-        if (isRegistered) {
-            val calories = record?.energy?.inKilocalories ?: 0.0
-            Text(
-                text = "${calories.toInt()} kcal",
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                color = EmeraldGreenPrimary
-            )
-        } else if (isSkipped) {
-            Text(
-                text = "0 kcal",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        } else {
-            Text(
-                text = "ー",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-            )
-        }
+        Text(
+            text = calorieText,
+            style = if (isRegistered) {
+                MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
+            } else {
+                MaterialTheme.typography.labelSmall
+            },
+            color = when {
+                isRegistered -> EmeraldGreenPrimary
+                isSkipped -> MaterialTheme.colorScheme.onSurfaceVariant
+                else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+            }
+        )
     }
 }
 

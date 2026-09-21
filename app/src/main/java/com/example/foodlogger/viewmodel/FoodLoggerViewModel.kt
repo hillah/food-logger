@@ -73,8 +73,8 @@ class FoodLoggerViewModel(
     private val _currentWeekStart = MutableStateFlow(getSundayOfCurrentWeek(LocalDate.now()))
     val currentWeekStart: StateFlow<LocalDate> = _currentWeekStart.asStateFlow()
 
-    private val _weekRecordsMap = MutableStateFlow<Map<LocalDate, Map<Int, NutritionRecord>>>(emptyMap())
-    val weekRecordsMap: StateFlow<Map<LocalDate, Map<Int, NutritionRecord>>> = _weekRecordsMap.asStateFlow()
+    private val _weekRecordsMap = MutableStateFlow<Map<LocalDate, Map<Int, List<NutritionRecord>>>>(emptyMap())
+    val weekRecordsMap: StateFlow<Map<LocalDate, Map<Int, List<NutritionRecord>>>> = _weekRecordsMap.asStateFlow()
 
     private val _previousWeekUnregisteredList = MutableStateFlow<List<Pair<LocalDate, MealCategory>>>(emptyList())
     val previousWeekUnregisteredList: StateFlow<List<Pair<LocalDate, MealCategory>>> = _previousWeekUnregisteredList.asStateFlow()
@@ -89,8 +89,8 @@ class FoodLoggerViewModel(
     private val _summaryHasCompletedMainMeals = MutableStateFlow(false)
     val summaryHasCompletedMainMeals: StateFlow<Boolean> = _summaryHasCompletedMainMeals.asStateFlow()
 
-    private val _summaryDayRecords = MutableStateFlow<Map<Int, NutritionRecord>>(emptyMap())
-    val summaryDayRecords: StateFlow<Map<Int, NutritionRecord>> = _summaryDayRecords.asStateFlow()
+    private val _summaryDayRecords = MutableStateFlow<Map<Int, List<NutritionRecord>>>(emptyMap())
+    val summaryDayRecords: StateFlow<Map<Int, List<NutritionRecord>>> = _summaryDayRecords.asStateFlow()
 
     // Selected Target for Registration
     private val _selectedDate = MutableStateFlow(LocalDate.now())
@@ -185,7 +185,9 @@ class FoodLoggerViewModel(
         var totalTransFat = 0.0
         var totalCholesterol = 0.0
 
-        dayRecords.values.forEach { record ->
+        val allRecordsOfDay = dayRecords.values.flatten()
+
+        allRecordsOfDay.forEach { record ->
             totalCalories += record.energy?.inKilocalories ?: 0.0
             totalProtein += record.protein?.inGrams ?: 0.0
             totalFat += record.totalFat?.inGrams ?: 0.0
@@ -244,9 +246,9 @@ class FoodLoggerViewModel(
             cholesterolMg = totalCholesterol
         )
 
-        val hasBreakfast = dayRecords.containsKey(MealCategory.BREAKFAST.mealTypeConstant)
-        val hasLunch = dayRecords.containsKey(MealCategory.LUNCH.mealTypeConstant)
-        val hasDinner = dayRecords.containsKey(MealCategory.DINNER.mealTypeConstant)
+        val hasBreakfast = dayRecords.containsKey(MealCategory.BREAKFAST.mealTypeConstant) && (dayRecords[MealCategory.BREAKFAST.mealTypeConstant]?.isNotEmpty() == true)
+        val hasLunch = dayRecords.containsKey(MealCategory.LUNCH.mealTypeConstant) && (dayRecords[MealCategory.LUNCH.mealTypeConstant]?.isNotEmpty() == true)
+        val hasDinner = dayRecords.containsKey(MealCategory.DINNER.mealTypeConstant) && (dayRecords[MealCategory.DINNER.mealTypeConstant]?.isNotEmpty() == true)
         _summaryHasCompletedMainMeals.value = hasBreakfast && hasLunch && hasDinner
 
         _currentScreen.value = CurrentScreen.DAILY_SUMMARY
@@ -331,11 +333,11 @@ class FoodLoggerViewModel(
 
             val recordsResult = healthConnectManager.readNutritionRecords(startTime, endTime)
             recordsResult.onSuccess { records ->
-                val map = mutableMapOf<LocalDate, MutableMap<Int, NutritionRecord>>()
+                val map = mutableMapOf<LocalDate, MutableMap<Int, MutableList<NutritionRecord>>>()
                 records.forEach { record ->
                     val localDate = record.startTime.atZone(zoneId).toLocalDate()
                     val dayMap = map.getOrPut(localDate) { mutableMapOf() }
-                    dayMap[record.mealType] = record
+                    dayMap.getOrPut(record.mealType) { mutableListOf() }.add(record)
                 }
                 _weekRecordsMap.value = map
             }

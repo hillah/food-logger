@@ -103,7 +103,7 @@ class HealthConnectManager(private val context: Context) {
 
             val mealTypeConstant = parseMealType(mealTypeString)
 
-            // 1. Check and delete existing records for the same day & mealType
+            // 1. Check and delete existing Food Logger records for the same day & mealType
             val existing = client.readRecords(
                 ReadRecordsRequest(
                     recordType = NutritionRecord::class,
@@ -111,7 +111,9 @@ class HealthConnectManager(private val context: Context) {
                 )
             ).records
 
-            val toDelete = existing.filter { it.mealType == mealTypeConstant }.map { it.metadata.id }
+            val toDelete = existing.filter {
+                it.mealType == mealTypeConstant && it.metadata.dataOrigin.packageName == context.packageName
+            }.map { it.metadata.id }
             if (toDelete.isNotEmpty()) {
                 client.deleteRecords(
                     recordType = NutritionRecord::class,
@@ -195,7 +197,7 @@ class HealthConnectManager(private val context: Context) {
 
             val mealTypeConstant = parseMealType(mealTypeString)
 
-            // Delete existing records for the same day & mealType
+            // Delete existing Food Logger records for the same day & mealType
             val existing = client.readRecords(
                 ReadRecordsRequest(
                     recordType = NutritionRecord::class,
@@ -203,7 +205,9 @@ class HealthConnectManager(private val context: Context) {
                 )
             ).records
 
-            val toDelete = existing.filter { it.mealType == mealTypeConstant }.map { it.metadata.id }
+            val toDelete = existing.filter {
+                it.mealType == mealTypeConstant && it.metadata.dataOrigin.packageName == context.packageName
+            }.map { it.metadata.id }
             if (toDelete.isNotEmpty()) {
                 client.deleteRecords(
                     recordType = NutritionRecord::class,

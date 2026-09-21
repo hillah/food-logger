@@ -70,13 +70,13 @@ enum class MealCategory(val key: String, val label: String, val mealTypeConstant
 sealed interface MealRecordStatus {
     object NotRegistered : MealRecordStatus
     object Skipped : MealRecordStatus
-    data class Registered(val record: NutritionRecord, val caloriesKcal: Double) : MealRecordStatus
+    data class Registered(val records: List<NutritionRecord>, val caloriesKcal: Double) : MealRecordStatus
 }
 
 @Composable
 fun WeeklyDashboardScreen(
     currentWeekStart: LocalDate,
-    weekRecordsMap: Map<LocalDate, Map<Int, NutritionRecord>>,
+    weekRecordsMap: Map<LocalDate, Map<Int, List<NutritionRecord>>>,
     previousWeekUnregisteredList: List<Pair<LocalDate, MealCategory>>,
     ageGroup: String,
     gender: String,
@@ -302,13 +302,16 @@ fun WeeklyDashboardScreen(
                             ) {
                                 weekDays.forEach { date ->
                                     val dayRecords = weekRecordsMap[date] ?: emptyMap()
-                                    val record = dayRecords[category.mealTypeConstant]
+                                    val records = dayRecords[category.mealTypeConstant] ?: emptyList()
                                     val isOutOfRange = date < earliestAllowedDate
 
                                     val status: MealRecordStatus = when {
-                                        record == null -> MealRecordStatus.NotRegistered
-                                        record.name == "食事なし" || (record.energy?.inKilocalories ?: 0.0) == 0.0 -> MealRecordStatus.Skipped
-                                        else -> MealRecordStatus.Registered(record, record.energy?.inKilocalories ?: 0.0)
+                                        records.isEmpty() -> MealRecordStatus.NotRegistered
+                                        records.all { it.name == "食事なし" || (it.energy?.inKilocalories ?: 0.0) == 0.0 } && records.any { it.name == "食事なし" } -> MealRecordStatus.Skipped
+                                        else -> {
+                                            val totalKcal = records.sumOf { it.energy?.inKilocalories ?: 0.0 }
+                                            MealRecordStatus.Registered(records, totalKcal)
+                                        }
                                     }
 
                                     MatrixCell(
@@ -336,15 +339,16 @@ fun WeeklyDashboardScreen(
                         ) {
                             weekDays.forEach { date ->
                                 val dayRecords = weekRecordsMap[date] ?: emptyMap()
-                                val totalCalories = dayRecords.values.sumOf { it.energy?.inKilocalories ?: 0.0 }
-                                val hasBreakfast = dayRecords.containsKey(MealCategory.BREAKFAST.mealTypeConstant)
-                                val hasLunch = dayRecords.containsKey(MealCategory.LUNCH.mealTypeConstant)
-                                val hasDinner = dayRecords.containsKey(MealCategory.DINNER.mealTypeConstant)
+                                val allDayRecords = dayRecords.values.flatten()
+                                val totalCalories = allDayRecords.sumOf { it.energy?.inKilocalories ?: 0.0 }
+                                val hasBreakfast = dayRecords.containsKey(MealCategory.BREAKFAST.mealTypeConstant) && (dayRecords[MealCategory.BREAKFAST.mealTypeConstant]?.isNotEmpty() == true)
+                                val hasLunch = dayRecords.containsKey(MealCategory.LUNCH.mealTypeConstant) && (dayRecords[MealCategory.LUNCH.mealTypeConstant]?.isNotEmpty() == true)
+                                val hasDinner = dayRecords.containsKey(MealCategory.DINNER.mealTypeConstant) && (dayRecords[MealCategory.DINNER.mealTypeConstant]?.isNotEmpty() == true)
                                 val hasCompletedMain = hasBreakfast && hasLunch && hasDinner
 
-                                val totalP = dayRecords.values.sumOf { it.protein?.inGrams ?: 0.0 }
-                                val totalF = dayRecords.values.sumOf { it.totalFat?.inGrams ?: 0.0 }
-                                val totalC = dayRecords.values.sumOf { it.totalCarbohydrate?.inGrams ?: 0.0 }
+                                val totalP = allDayRecords.sumOf { it.protein?.inGrams ?: 0.0 }
+                                val totalF = allDayRecords.sumOf { it.totalFat?.inGrams ?: 0.0 }
+                                val totalC = allDayRecords.sumOf { it.totalCarbohydrate?.inGrams ?: 0.0 }
                                 val totalMacroKcal = (totalP * 4.0) + (totalF * 9.0) + (totalC * 4.0)
                                 val pPct = if (totalMacroKcal > 0) ((totalP * 4.0) / totalMacroKcal * 100).toInt() else 0
                                 val fPct = if (totalMacroKcal > 0) ((totalF * 9.0) / totalMacroKcal * 100).toInt() else 0

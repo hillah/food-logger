@@ -76,6 +76,8 @@ fun HomeScreen(
     val selectedBitmaps by viewModel.selectedImageBitmaps.collectAsState()
     val inputText by viewModel.inputText.collectAsState()
     val isSearchGroundingEnabled by viewModel.isSearchGroundingEnabled.collectAsState()
+    val isAppendMode by viewModel.isAppendMode.collectAsState()
+    val dailyAdviceState by viewModel.dailyAdviceState.collectAsState()
     val hasPermission by viewModel.hasHealthConnectPermission.collectAsState()
     val geminiApiKey by viewModel.geminiApiKey.collectAsState()
     val geminiModel by viewModel.geminiModel.collectAsState()
@@ -275,6 +277,8 @@ fun HomeScreen(
                                 inputText = inputText,
                                 isSearchGroundingEnabled = isSearchGroundingEnabled,
                                 onSearchGroundingToggled = { enabled -> viewModel.onSearchGroundingToggled(enabled) },
+                                isAppendMode = isAppendMode,
+                                onAppendModeToggled = { enabled -> viewModel.onAppendModeToggled(enabled) },
                                 onImagesAdded = { bitmaps -> viewModel.onImagesAdded(bitmaps) },
                                 onImageAdded = { bitmap -> viewModel.onImageAdded(bitmap) },
                                 onImageRemovedAt = { index -> viewModel.onImageRemovedAt(index) },
@@ -295,6 +299,8 @@ fun HomeScreen(
                             ageGroup = userAgeGroup,
                             gender = userGender,
                             activityLevel = userActivityLevel,
+                            dailyAdviceState = dailyAdviceState,
+                            onRequestAdvice = { viewModel.requestDailyNutritionAdvice() },
                             onBackClick = { viewModel.backToDashboard() }
                         )
                     }

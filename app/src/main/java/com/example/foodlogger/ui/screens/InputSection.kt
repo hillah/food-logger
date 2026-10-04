@@ -65,6 +65,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -77,6 +78,8 @@ fun InputSection(
     inputText: String,
     isSearchGroundingEnabled: Boolean,
     onSearchGroundingToggled: (Boolean) -> Unit,
+    isAppendMode: Boolean = false,
+    onAppendModeToggled: (Boolean) -> Unit = {},
     onImagesAdded: (List<Bitmap>) -> Unit,
     onImageAdded: (Bitmap) -> Unit,
     onImageRemovedAt: (Int) -> Unit,
@@ -375,6 +378,58 @@ fun InputSection(
                     Switch(
                         checked = isSearchGroundingEnabled,
                         onCheckedChange = onSearchGroundingToggled,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = EmeraldGreenPrimary,
+                            checkedTrackColor = EmeraldGreenPrimary.copy(alpha = 0.3f)
+                        )
+                    )
+                }
+            }
+
+            // Append Mode (追加登録) toggle
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                color = if (isAppendMode) EmeraldGreenPrimary.copy(alpha = 0.1f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                border = BorderStroke(
+                    1.dp,
+                    if (isAppendMode) EmeraldGreenPrimary.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlaylistAdd,
+                            contentDescription = null,
+                            tint = if (isAppendMode) EmeraldGreenPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "追加登録（既存の記録を残す）",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = if (isAppendMode) "ON: 既存の記録を消さずに追加します" else "OFF: 既存の記録を上書きします（通常登録）",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isAppendMode) EmeraldGreenPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Switch(
+                        checked = isAppendMode,
+                        onCheckedChange = onAppendModeToggled,
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = EmeraldGreenPrimary,
                             checkedTrackColor = EmeraldGreenPrimary.copy(alpha = 0.3f)

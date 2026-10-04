@@ -42,6 +42,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.health.connect.client.records.NutritionRecord
 import com.example.foodlogger.data.model.DailyNutritionTarget
 import com.example.foodlogger.data.model.EvaluationGrade
@@ -49,6 +61,7 @@ import com.example.foodlogger.data.model.NutrientDetails
 import com.example.foodlogger.data.model.NutritionStandards
 import com.example.foodlogger.ui.components.PfcMacroSection
 import com.example.foodlogger.ui.theme.EmeraldGreenPrimary
+import com.example.foodlogger.viewmodel.DailyAdviceUiState
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -62,6 +75,8 @@ fun DailySummaryScreen(
     ageGroup: String,
     gender: String,
     activityLevel: String,
+    dailyAdviceState: DailyAdviceUiState = DailyAdviceUiState.Idle,
+    onRequestAdvice: () -> Unit = {},
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -295,6 +310,153 @@ fun DailySummaryScreen(
             nutrients = dailyTotalNutrients,
             targets = standards
         )
+
+        // AI Nutritionist Advice Card Section
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = EmeraldGreenPrimary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Text(
+                            text = "管理栄養士のAIアドバイス",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    if (dailyAdviceState is DailyAdviceUiState.Success) {
+                        OutlinedButton(
+                            onClick = onRequestAdvice,
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("再分析", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+
+                HorizontalDivider()
+
+                when (dailyAdviceState) {
+                    is DailyAdviceUiState.Idle -> {
+                        Text(
+                            text = "本日の食事内容・総摂取栄養素・PFCバランスをもとに、プロの管理栄養士AIによる詳しい評価と改善アドバイスを生成します。",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Button(
+                            onClick = onRequestAdvice,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldGreenPrimary)
+                        ) {
+                            Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "AIアドバイスを取得する",
+                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+                            )
+                        }
+                    }
+                    is DailyAdviceUiState.Loading -> {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(32.dp),
+                                color = EmeraldGreenPrimary,
+                                strokeWidth = 3.dp
+                            )
+                            Text(
+                                text = "管理栄養士AIが食事内容と栄養バランスを分析中...",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    is DailyAdviceUiState.Success -> {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            FormattedNutritionAdviceView(
+                                adviceText = dailyAdviceState.advice,
+                                modifier = Modifier.padding(14.dp)
+                            )
+                        }
+                    }
+                    is DailyAdviceUiState.Error -> {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.ErrorOutline,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "アドバイス取得エラー",
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
+                                Text(
+                                    text = dailyAdviceState.errorMessage,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                                FilledTonalButton(
+                                    onClick = onRequestAdvice,
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.align(Alignment.End)
+                                ) {
+                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("再試行")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Back to Dashboard Button
         Button(
@@ -537,6 +699,201 @@ private fun SingleMealItemView(
                 else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
             }
         )
+    }
+}
+
+@Composable
+fun FormattedNutritionAdviceView(
+    adviceText: String,
+    modifier: Modifier = Modifier
+) {
+    val lines = adviceText.lines()
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        lines.forEach { rawLine ->
+            val line = rawLine.trim()
+
+            when {
+                line.isBlank() -> {
+                    Spacer(modifier = Modifier.height(2.dp))
+                }
+
+                // Section Header 1 or 2 (# Title, ## Title)
+                line.startsWith("## ") || line.startsWith("# ") -> {
+                    val title = line.removePrefix("## ").removePrefix("# ").trim().replace("**", "")
+                    AdviceSectionHeader(title = title)
+                }
+
+                // Section Header 3 or Numbered Big Header (### Title, 1. **Title**, **1. Title**, 【Title】)
+                line.startsWith("### ") || isAdviceSectionHeader(line) -> {
+                    val cleanTitle = line.removePrefix("### ").trim()
+                    AdviceSubSectionHeader(title = cleanTitle)
+                }
+
+                // Bullet points / List Items (- Item, * Item, ・Item, 1. Item)
+                line.startsWith("- ") || line.startsWith("* ") || line.startsWith("・") || isNumberedListItem(line) -> {
+                    val content = when {
+                        line.startsWith("- ") -> line.removePrefix("- ")
+                        line.startsWith("* ") -> line.removePrefix("* ")
+                        line.startsWith("・") -> line.removePrefix("・")
+                        else -> line.replaceFirst(Regex("""^\d+\.\s*"""), "")
+                    }.trim()
+
+                    AdviceBulletItem(content = content)
+                }
+
+                // Normal Paragraph
+                else -> {
+                    Text(
+                        text = parseMarkdownToAnnotatedString(
+                            text = line,
+                            baseColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            lineHeight = 22.sp,
+                            fontSize = 14.sp
+                        )
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdviceSectionHeader(title: String) {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = EmeraldGreenPrimary.copy(alpha = 0.15f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp, bottom = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(4.dp, 16.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(EmeraldGreenPrimary)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp
+                ),
+                color = EmeraldGreenPrimary
+            )
+        }
+    }
+}
+
+@Composable
+private fun AdviceSubSectionHeader(title: String) {
+    val annotated = parseMarkdownToAnnotatedString(
+        text = title,
+        baseColor = MaterialTheme.colorScheme.onSurface,
+        boldColor = EmeraldGreenPrimary
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 6.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Default.CheckCircle,
+            contentDescription = null,
+            tint = EmeraldGreenPrimary,
+            modifier = Modifier.size(16.dp)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = annotated,
+            style = MaterialTheme.typography.titleSmall.copy(
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp
+            ),
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+@Composable
+private fun AdviceBulletItem(content: String) {
+    val annotated = parseMarkdownToAnnotatedString(
+        text = content,
+        baseColor = MaterialTheme.colorScheme.onSurface
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 6.dp, top = 2.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(top = 8.dp)
+                .size(5.dp)
+                .clip(CircleShape)
+                .background(EmeraldGreenPrimary)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = annotated,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                lineHeight = 22.sp,
+                fontSize = 13.5.sp
+            ),
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+private fun isAdviceSectionHeader(line: String): Boolean {
+    return line.matches(Regex("""^(?:\d+\.\s*\*\*|\*\*\d+\.|【).+"""))
+}
+
+private fun isNumberedListItem(line: String): Boolean {
+    return line.matches(Regex("""^\d+\.\s+[^\*].*"""))
+}
+
+private fun parseMarkdownToAnnotatedString(
+    text: String,
+    baseColor: Color,
+    boldColor: Color = baseColor
+): AnnotatedString {
+    return buildAnnotatedString {
+        var cursor = 0
+        val regex = Regex("""\*\*(.*?)\*\*""")
+        val matches = regex.findAll(text)
+
+        for (match in matches) {
+            val range = match.range
+            if (range.first > cursor) {
+                withStyle(SpanStyle(color = baseColor)) {
+                    append(text.substring(cursor, range.first))
+                }
+            }
+            val boldContent = match.groupValues[1]
+            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = boldColor)) {
+                append(boldContent)
+            }
+            cursor = range.last + 1
+        }
+
+        if (cursor < text.length) {
+            withStyle(SpanStyle(color = baseColor)) {
+                append(text.substring(cursor))
+            }
+        }
     }
 }
 

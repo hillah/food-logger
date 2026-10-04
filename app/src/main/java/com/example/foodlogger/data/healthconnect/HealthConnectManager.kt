@@ -90,7 +90,8 @@ class HealthConnectManager(private val context: Context) {
     suspend fun upsertNutritionRecord(
         analysisResult: NutritionAnalysisResult,
         targetDate: LocalDate,
-        mealTypeString: String
+        mealTypeString: String,
+        isAppendMode: Boolean = false
     ): Result<String> = withContext(Dispatchers.IO) {
         val client = healthConnectClient ?: return@withContext Result.failure(
             IllegalStateException("Health Connect が利用できません。")
@@ -103,7 +104,7 @@ class HealthConnectManager(private val context: Context) {
 
             val mealTypeConstant = parseMealType(mealTypeString)
 
-            // 1. Check and delete existing Food Logger records for the same day & mealType
+            // 1. Check and delete existing Food Logger records for the same day & mealType if not in append mode
             val existing = client.readRecords(
                 ReadRecordsRequest(
                     recordType = NutritionRecord::class,
@@ -111,19 +112,25 @@ class HealthConnectManager(private val context: Context) {
                 )
             ).records
 
-            val toDelete = existing.filter {
+            val matchingExisting = existing.filter {
                 it.mealType == mealTypeConstant && it.metadata.dataOrigin.packageName == context.packageName
-            }.map { it.metadata.id }
-            if (toDelete.isNotEmpty()) {
-                client.deleteRecords(
-                    recordType = NutritionRecord::class,
-                    recordIdsList = toDelete,
-                    clientRecordIdsList = emptyList()
-                )
+            }
+
+            if (!isAppendMode) {
+                val toDelete = matchingExisting.map { it.metadata.id }
+                if (toDelete.isNotEmpty()) {
+                    client.deleteRecords(
+                        recordType = NutritionRecord::class,
+                        recordIdsList = toDelete,
+                        clientRecordIdsList = emptyList()
+                    )
+                }
             }
 
             // 2. Determine recorded time based on meal type and targetDate (ensure not in future)
-            val recordedTime = getTargetTimeForMeal(targetDate, mealTypeConstant, zoneId)
+            val baseRecordedTime = getTargetTimeForMeal(targetDate, mealTypeConstant, zoneId)
+            val offsetSeconds = if (isAppendMode) (matchingExisting.size * 5L) else 0L
+            val recordedTime = baseRecordedTime.plusSeconds(offsetSeconds)
             val now = Instant.now()
             val safeStartTime = if (recordedTime.isAfter(now)) now.minusSeconds(60) else recordedTime
             val safeEndTime = if (safeStartTime.plusSeconds(60).isAfter(now)) now else safeStartTime.plusSeconds(60)

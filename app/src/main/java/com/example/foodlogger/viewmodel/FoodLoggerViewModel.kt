@@ -40,6 +40,13 @@ sealed interface UiState {
     data class Error(val errorMessage: String) : UiState
 }
 
+sealed interface DailyAdviceUiState {
+    object Idle : DailyAdviceUiState
+    object Loading : DailyAdviceUiState
+    data class Success(val advice: String) : DailyAdviceUiState
+    data class Error(val errorMessage: String) : DailyAdviceUiState
+}
+
 class FoodLoggerViewModel(
     application: Application
 ) : AndroidViewModel(application) {
@@ -109,11 +116,21 @@ class FoodLoggerViewModel(
     private val _isSearchGroundingEnabled = MutableStateFlow(false)
     val isSearchGroundingEnabled: StateFlow<Boolean> = _isSearchGroundingEnabled.asStateFlow()
 
+    private val _isAppendMode = MutableStateFlow(false)
+    val isAppendMode: StateFlow<Boolean> = _isAppendMode.asStateFlow()
+
+    private val _dailyAdviceState = MutableStateFlow<DailyAdviceUiState>(DailyAdviceUiState.Idle)
+    val dailyAdviceState: StateFlow<DailyAdviceUiState> = _dailyAdviceState.asStateFlow()
+
     private val _hasHealthConnectPermission = MutableStateFlow(false)
     val hasHealthConnectPermission: StateFlow<Boolean> = _hasHealthConnectPermission.asStateFlow()
 
     init {
         checkHealthConnectPermissions()
+    }
+
+    fun onAppendModeToggled(enabled: Boolean) {
+        _isAppendMode.value = enabled
     }
 
     fun checkHealthConnectPermissions() {
@@ -150,12 +167,14 @@ class FoodLoggerViewModel(
         _selectedImageBitmaps.value = emptyList()
         _inputText.value = ""
         _isSearchGroundingEnabled.value = false
+        _isAppendMode.value = false
         _uiState.value = UiState.Idle
         _currentScreen.value = CurrentScreen.INPUT
     }
 
     fun openDailySummary(date: LocalDate) {
         _summaryTargetDate.value = date
+        _dailyAdviceState.value = DailyAdviceUiState.Idle
         val dayRecords = _weekRecordsMap.value[date] ?: emptyMap()
         _summaryDayRecords.value = dayRecords
 
@@ -267,6 +286,8 @@ class FoodLoggerViewModel(
         _selectedImageBitmaps.value = emptyList()
         _inputText.value = ""
         _isSearchGroundingEnabled.value = false
+        _isAppendMode.value = false
+        _dailyAdviceState.value = DailyAdviceUiState.Idle
         _uiState.value = UiState.Idle
         loadWeekRecords()
     }
@@ -431,7 +452,8 @@ class FoodLoggerViewModel(
                 val upsertResult = healthConnectManager.upsertNutritionRecord(
                     analysisResult = finalResult,
                     targetDate = targetDate,
-                    mealTypeString = category.key
+                    mealTypeString = category.key,
+                    isAppendMode = _isAppendMode.value
                 )
 
                 upsertResult.onSuccess {
@@ -461,13 +483,66 @@ class FoodLoggerViewModel(
             val result = healthConnectManager.upsertNutritionRecord(
                 analysisResult = analysisResult,
                 targetDate = targetDate,
-                mealTypeString = category.key
+                mealTypeString = category.key,
+                isAppendMode = _isAppendMode.value
             )
             result.onSuccess { recordId ->
                 _uiState.value = UiState.Success("Health Connect に栄養データを記録しました！", recordId)
                 backToDashboard()
             }.onFailure { error ->
                 _uiState.value = UiState.Error("Health Connect への保存に失敗しました: ${error.localizedMessage}")
+            }
+        }
+    }
+
+    fun requestDailyNutritionAdvice() {
+        val apiKey = geminiApiKey.value
+        val model = geminiModel.value
+        val targetDate = _summaryTargetDate.value
+        val ageGroup = userAgeGroup.value
+        val gender = userGender.value
+        val activityLevel = userActivityLevel.value
+        val dayRecords = _summaryDayRecords.value
+        val nutrients = _summaryNutrients.value
+
+        if (apiKey.isBlank()) {
+            _dailyAdviceState.value = DailyAdviceUiState.Error("Gemini APIキーが設定されていません。右上の設定アイコン（⚙️）からAPIキーを入力してください。")
+            return
+        }
+
+        val standards = com.example.foodlogger.data.model.NutritionStandards.getDailyTarget(ageGroup, gender, activityLevel)
+
+        val recordedMealsSummary = mutableListOf<String>()
+        MealCategory.values().forEach { cat ->
+            val records = dayRecords[cat.mealTypeConstant] ?: emptyList()
+            if (records.isNotEmpty()) {
+                records.forEach { rec ->
+                    val isSkipped = rec.name == "食事なし" || (rec.energy?.inKilocalories ?: 0.0) == 0.0
+                    val name = if (isSkipped) "食事なし（欠食）" else (rec.name?.ifBlank { "食事記録" } ?: "食事記録")
+                    val kcal = rec.energy?.inKilocalories ?: 0.0
+                    recordedMealsSummary.add("${cat.label}: $name (${kcal.toInt()} kcal)")
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            _dailyAdviceState.value = DailyAdviceUiState.Loading
+            val result = geminiService.generateDailyNutritionAdvice(
+                apiKey = apiKey,
+                modelName = model,
+                targetDate = targetDate,
+                ageGroup = ageGroup,
+                gender = gender,
+                activityLevel = activityLevel,
+                targetStandards = standards,
+                dailyTotalNutrients = nutrients,
+                recordedMealsSummary = recordedMealsSummary
+            )
+
+            result.onSuccess { advice ->
+                _dailyAdviceState.value = DailyAdviceUiState.Success(advice)
+            }.onFailure { error ->
+                _dailyAdviceState.value = DailyAdviceUiState.Error(error.localizedMessage ?: "アドバイスの生成に失敗しました。")
             }
         }
     }

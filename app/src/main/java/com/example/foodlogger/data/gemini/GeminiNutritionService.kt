@@ -1,10 +1,15 @@
 package com.example.foodlogger.data.gemini
 
 import android.graphics.Bitmap
+import com.example.foodlogger.data.model.DailyNutritionTarget
+import com.example.foodlogger.data.model.NutrientDetails
 import com.example.foodlogger.data.model.NutritionAnalysisResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 class GeminiNutritionService {
 
@@ -311,5 +316,114 @@ class GeminiNutritionService {
             return trimmed.substring(firstBrace, lastBrace + 1)
         }
         return trimmed
+    }
+    private val adviceSystemInstruction = """
+        あなたは日本の一流のプロ管理栄養士（パーソナル栄養アドバイザー）です。
+        ユーザーが1日に摂取した食事内容・総摂取栄養素と、年齢・性別・身体活動レベルに基づく日本人の食事摂取基準（目標値）を比較分析し、
+        親身で温かく、かつ専門的で実践的な栄養アドバイスを提供してください。
+
+        【回答のトーンと構成】
+        1. **本日の総評・スコア（100点満点評価）**
+           - 良かった点（達成できた栄養素や健康的な選択）を褒めつつ、総合評価を提示してください。
+        2. **エネルギー＆PFCバランスの評価**
+           - 総カロリーの過不足、およびタンパク質・脂質・炭水化物の比率（PFCバランス）を分かりやすく解説してください。
+        3. **注目すべき栄養素と改善ポイント**
+           - 不足しているビタミン・ミネラル・食物繊維や、過剰気味の脂質・塩分・糖質を指摘し、それを補う・調整するための具体的な食品・食材・調理法を提案してください。
+        4. **明日への実践的なアクションプラン**
+           - 自炊派にもコンビニ・外食派にも役立つ、明日のメニュー選びのワンポイントアドバイスを提案してください。
+
+        ※ マークダウン形式（見出し、箇条書き、太字等）で視覚的にわかりやすくまとめてください。
+    """.trimIndent()
+
+    suspend fun generateDailyNutritionAdvice(
+        apiKey: String,
+        modelName: String,
+        targetDate: LocalDate,
+        ageGroup: String,
+        gender: String,
+        activityLevel: String,
+        targetStandards: DailyNutritionTarget,
+        dailyTotalNutrients: NutrientDetails,
+        recordedMealsSummary: List<String>
+    ): Result<String> = withContext(Dispatchers.IO) {
+        if (apiKey.isBlank()) {
+            return@withContext Result.failure(IllegalStateException("Gemini APIキーが設定されていません。右上の設定アイコン（⚙️）からAPIキーを入力してください。"))
+        }
+
+        val targetModel = modelName.trim().removePrefix("models/").ifBlank { "gemini-flash-lite-latest" }
+        val endpointUrl = "https://generativelanguage.googleapis.com/v1beta/models/$targetModel:generateContent?key=${apiKey.trim()}"
+
+        try {
+            val userPromptBuilder = StringBuilder()
+            val dateStr = targetDate.format(DateTimeFormatter.ofPattern("yyyy年M月d日", Locale.JAPANESE))
+            userPromptBuilder.append("【対象日】: $dateStr\n")
+            userPromptBuilder.append("【ユーザー属性】: 年代: $ageGroup, 性別: $gender, 身体活動レベル: $activityLevel\n\n")
+
+            userPromptBuilder.append("【1日の食事記録一覧】:\n")
+            if (recordedMealsSummary.isEmpty()) {
+                userPromptBuilder.append("・記録なし\n")
+            } else {
+                recordedMealsSummary.forEach { meal ->
+                    userPromptBuilder.append("・$meal\n")
+                }
+            }
+            userPromptBuilder.append("\n")
+
+            userPromptBuilder.append("【1日の総摂取栄養素 vs 目標基準値】:\n")
+            userPromptBuilder.append("・エネルギー: ${dailyTotalNutrients.caloriesKcal.toInt()} kcal (目標: ${targetStandards.targetCaloriesKcal.toInt()} kcal)\n")
+            userPromptBuilder.append("・タンパク質: ${String.format(Locale.US, "%.1f", dailyTotalNutrients.proteinG)} g (目標: ${targetStandards.targetProteinG.toInt()} g)\n")
+            userPromptBuilder.append("・脂質: ${String.format(Locale.US, "%.1f", dailyTotalNutrients.fatG)} g (目標: ${targetStandards.targetFatG.toInt()} g)\n")
+            userPromptBuilder.append("・炭水化物: ${String.format(Locale.US, "%.1f", dailyTotalNutrients.carbohydrateG)} g (目標: ${targetStandards.targetCarbsG.toInt()} g)\n")
+            userPromptBuilder.append("・食物繊維: ${String.format(Locale.US, "%.1f", dailyTotalNutrients.fiberG)} g (目標: ${targetStandards.targetFiberG.toInt()} g)\n")
+            userPromptBuilder.append("・食塩相当量: ${String.format(Locale.US, "%.1f", dailyTotalNutrients.saltEquivalentG)} g (目標: ${targetStandards.maxSaltG} g未満)\n")
+            userPromptBuilder.append("・カリウム: ${dailyTotalNutrients.potassiumMg.toInt()} mg (目安: 2500 mg)\n")
+            userPromptBuilder.append("・カルシウム: ${dailyTotalNutrients.calciumMg.toInt()} mg (目標: ${targetStandards.targetCalciumMg.toInt()} mg)\n")
+            userPromptBuilder.append("・鉄: ${String.format(Locale.US, "%.1f", dailyTotalNutrients.ironMg)} mg (目標: ${targetStandards.targetIronMg.toInt()} mg)\n")
+            userPromptBuilder.append("・ビタミンA: ${dailyTotalNutrients.vitaminAMcg.toInt()} µgRAE (目標: ${targetStandards.targetVitaminAMcg.toInt()} µgRAE)\n")
+            userPromptBuilder.append("・ビタミンB1: ${String.format(Locale.US, "%.2f", dailyTotalNutrients.vitaminB1Mg)} mg (目標: ${String.format(Locale.US, "%.2f", targetStandards.targetVitaminB1Mg)} mg)\n")
+            userPromptBuilder.append("・ビタミンB2: ${String.format(Locale.US, "%.2f", dailyTotalNutrients.vitaminB2Mg)} mg (目標: ${String.format(Locale.US, "%.2f", targetStandards.targetVitaminB2Mg)} mg)\n")
+            userPromptBuilder.append("・ビタミンC: ${dailyTotalNutrients.vitaminCMg.toInt()} mg (目標: ${targetStandards.targetVitaminCMg.toInt()} mg)\n")
+            userPromptBuilder.append("・ビタミンD: ${String.format(Locale.US, "%.1f", dailyTotalNutrients.vitaminDMcg)} µg (目標: ${targetStandards.targetVitaminDMcg.toInt()} µg)\n")
+            userPromptBuilder.append("\n上記の情報に基づき、プロの管理栄養士として的確で親身なアドバイスを作成してください。")
+
+            val escapedSystemInstruction = escapeJsonString(adviceSystemInstruction)
+            val escapedPrompt = escapeJsonString(userPromptBuilder.toString())
+
+            val requestJson = """
+            {
+              "system_instruction": {
+                "parts": [
+                  {"text": "$escapedSystemInstruction"}
+                ]
+              },
+              "contents": [
+                {
+                  "role": "user",
+                  "parts": [
+                    {"text": "$escapedPrompt"}
+                  ]
+                }
+              ],
+              "generationConfig": {
+                "temperature": 0.7
+              }
+            }
+            """.trimIndent()
+
+            val (responseCode, responseBody) = sendHttpRequest(endpointUrl, requestJson)
+
+            if (responseCode !in 200..299) {
+                val parsedErrorMessage = parseGoogleApiError(responseCode, responseBody, targetModel)
+                return@withContext Result.failure(Exception(parsedErrorMessage))
+            }
+
+            val adviceText = extractGeneratedTextFromApiResponse(responseBody)
+                ?: return@withContext Result.failure(IllegalStateException("アドバイスの生成結果を取得できませんでした。\nレスポンス: ${responseBody.take(500)}"))
+
+            Result.success(adviceText)
+        } catch (e: Exception) {
+            val msg = e.localizedMessage ?: e.message ?: "通信に失敗しました"
+            Result.failure(Exception("AIアドバイス生成エラー: $msg", e))
+        }
     }
 }
